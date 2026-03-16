@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>كشف الرواتب الشهرية</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @media print {
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .no-print { display: none !important; }
+            .form-container { box-shadow: none !important; margin-top: 0 !important; }
+            .overlay .fld { border: none !important; background: transparent !important; }
+        }
+
+        body {
+            font-family: 'Traditional Arabic', 'Simplified Arabic', 'Arial', sans-serif;
+            background: #e8e8e8;
+            direction: rtl;
+        }
+
+        /* Toolbar styles are now in toolbar-pro.js */
+
+        /* ===== FORM CONTAINER ===== */
+        .form-container {
+            position: relative;
+            width: 1024px;
+            margin: 50px auto 30px auto;
+            background: #fff;
+            box-shadow: 0 2px 10px rgba(0,0,0,.12);
+        }
+        .form-container img.bg {
+            width: 100%; display: block;
+            user-select: none; -webkit-user-drag: none;
+            pointer-events: none;
+        }
+
+        /* ===== OVERLAY ===== */
+        .overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+        }
+        .overlay .fld {
+            position: absolute;
+            pointer-events: auto;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'Traditional Arabic', 'Simplified Arabic', 'Arial', sans-serif;
+            text-align: center;
+            overflow: hidden;
+            white-space: nowrap;
+            border: 1px dashed rgba(0,80,180,.2);
+            background: rgba(255,255,255,.6);
+            color: #222;
+            padding: 0 3px;
+        }
+        .overlay .fld.transparent {
+            border: none; background: transparent;
+        }
+        .overlay .fld-editable {
+            cursor: text;
+        }
+        .overlay .fld-editable:hover {
+            border-color: rgba(0,80,180,.4);
+            background: rgba(255,255,240,.7);
+        }
+        .overlay .fld.id-type-note {
+            font-size: 9px; line-height: 1.1;
+            white-space: normal; word-break: break-all;
+            flex-direction: column;
+        }
+
+        /* Status bar styles are now in toolbar-pro.js */
+
+        /* ===== MODAL ===== */
+        .modal-bg {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,.45); z-index: 2000; direction: rtl;
+        }
+        .modal-box {
+            background: #fff; width: 780px; max-height: 82vh;
+            margin: 60px auto; border-radius: 6px; overflow: auto; padding: 20px;
+        }
+        .modal-box h3 { margin-bottom: 14px; color: #1a3a5c; font-family: inherit; }
+        .modal-box table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .modal-box th { background: #1a3a5c; color: #fff; padding: 7px; border: 1px solid #ccc; }
+        .modal-box td { padding: 5px; border: 1px solid #eee; }
+        .modal-box input, .modal-box select {
+            width: 100%; padding: 3px 5px; font-family: inherit; font-size: 12px;
+            border: 1px solid #ccc; border-radius: 2px;
+        }
+        .modal-box .btn {
+            border: none; padding: 6px 18px; border-radius: 3px;
+            cursor: pointer; font-family: inherit; font-size: 12px; color: #fff;
+        }
+    </style>
+</head>
+<body>
+
+<script src="js/toolbar-pro.js"></script>
+<!-- Toolbar is built by toolbar-pro.js -->
+
+<!-- ===== FORM ===== -->
+<div class="form-container" id="formWrap">
+    <img class="bg" src="salary.png" id="bgImg" alt="salary form">
+    <div class="overlay" id="overlay"></div>
+</div>
+
+<!-- Status bar is built by toolbar-pro.js -->
+
+<!-- ===== EMPLOYEE MODAL ===== -->
+<div class="modal-bg no-print" id="empModal">
+    <div class="modal-box">
+        <h3>إدارة الموظفين المسجلين</h3>
+        <table>
+            <thead><tr>
+                <th>م</th><th>اسم الموظف</th><th>الرقم</th><th>نوع الرقم</th>
+                <th>المسمى الوظيفي</th><th>ملاحظات جهة العمل</th><th>إجراء</th>
+            </tr></thead>
+            <tbody id="empTbody"></tbody>
+        </table>
+        <div style="margin-top:10px; display:flex; gap:6px;">
+            <button class="btn" style="background:#2a6496" onclick="addEmpRow()">إضافة موظف</button>
+            <button class="btn" style="background:#28a745" onclick="saveEmps()">حفظ</button>
+            <button class="btn" style="background:#6c757d" onclick="closeEmpModal()">إغلاق</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ================================================================
+//  SALARY REPORT MODULE
+// ================================================================
+
+const STORE_PFX  = 'moh_salary_';
+const EMP_KEY    = 'moh_employees';
+const WP_KEY     = 'moh_workplace';
+
+const DEF_EMPS = [
+    { name:'د. مصطفى حسني',       staffNumber:'82021',     numType:'وظيفي', job:'طبيب عام',      workNotes:'', hrNotes:'' },
+    { name:'ANU MAMOOTIL',         staffNumber:'88973',     numType:'وظيفي', job:'STAFF NURSE',   workNotes:'', hrNotes:'' },
+    { name:'MITTY MATHEW',         staffNumber:'79470',     numType:'وظيفي', job:'STAFF NURSE',   workNotes:'', hrNotes:'' },
+    { name:'SAMINI THANKAMONY',    staffNumber:'85181',     numType:'وظيفي', job:'STAFF NURSE',   workNotes:'', hrNotes:'' },
+    { name:'حسان بن ثابت هادي رجب', staffNumber:'222975657', numType:'مدني',  job:'سائق اسعاف',    workNotes:'عقد أجر يومي', hrNotes:'' },
+];
+
+const DEF_WP = 'مركز حاسك الصحي';
+const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+let cMonth, cYear, emps=[], wp;
+
+/* ---------- init ---------- */
+function init(){
+    loadEmps(); loadWp();
+
+    ToolbarPro.build({
+        title: 'كشف الرواتب الشهرية',
+        extraButtons: [
+            { text:'إدارة الموظفين', onclick:'openEmpModal()' }
+        ],
+        onSave: function(silent){ saveData(silent); }
+    });
+
+    setupSelectors();
+    const img = document.getElementById('bgImg');
+    const go = ()=>{ buildFields(); loadData(); sts('جاهز'); };
+    img.complete ? go() : img.onload = go;
+}
+
+function loadEmps(){
+    try { emps = JSON.parse(localStorage.getItem(EMP_KEY)) || [...DEF_EMPS]; }
+    catch(e){ emps = [...DEF_EMPS]; }
+    if(!emps.length) emps = [...DEF_EMPS];
+}
+function saveEmpsLS(){ localStorage.setItem(EMP_KEY, JSON.stringify(emps)); }
+function loadWp(){ wp = localStorage.getItem(WP_KEY) || DEF_WP; }
+function saveWpLS(){ localStorage.setItem(WP_KEY, wp); }
+
+/* ---------- month / year ---------- */
+function setupSelectors(){
+    const now = new Date(); cMonth = now.getMonth()+1; cYear = now.getFullYear();
+    const sM = document.getElementById('selMonth');
+    const sY = document.getElementById('selYear');
+    AR_M.forEach((m,i)=>{
+        const o = new Option(m, i+1, false, i+1===cMonth); sM.add(o);
+    });
+    for(let y=2024;y<=2032;y++){ sY.add(new Option(y,y,false,y===cYear)); }
+    sM.onchange = ()=>{ cMonth=+sM.value; refresh(); };
+    sY.onchange = ()=>{ cYear=+sY.value; refresh(); };
+}
+
+/* ================================================================
+   BUILD OVERLAY FIELDS
+   Positions are % of image. Measured from the salary.png template.
+   ================================================================ */
+function buildFields(){
+    const ov = document.getElementById('overlay');
+    ov.innerHTML = '';
+
+    // =============================================
+    // Precise positions calculated from salary.png
+    // Image: 3508 x 2480 pixels
+    // All values are % of image dimensions
+    // =============================================
+
+    // --- Month name (dots area after "لشهر") ---
+    mkFld(ov,{id:'h_month', t:15.3, r:37.3, w:15, h:2.0, fs:23, fw:'bold', clr:'#c00',
+        val:()=> AR_M[cMonth-1]});
+
+    // --- Year + م ---
+    mkFld(ov,{id:'h_year', t:15.5, r:45.7, w:8.5, h:2.0, fs:15, fw:'bold', clr:'#c00',
+        val:()=> cYear+' م'});
+
+    // --- جهة العمل ---
+    mkFld(ov,{id:'h_wp', t:20.1, r:1.3, w:37, h:1.8, fs:18, fw:'bold', clr:'#0068a0',
+        val:()=>wp, edit:true, onch:(v)=>{wp=v; saveWpLS();}});
+
+    // =============================================
+    // TABLE: 12 rows - كل صف بإحداثياته المستقلة
+    // t=top%, h=height% لكل صف
+    // r=right%, w=width% لكل عمود في كل صف
+    // fs=font-size, fw=font-weight
+    // يمكنك تعديل أي صف بشكل مستقل
+    // =============================================
+    const ROWS = [
+        // --- حقل 1 ---
+        { label:'حقل 1', t:33.20, h:4.50,
+          name:{r:7.4, w:27.0, fs:15}, sid:{r:32, w:8.70, fs:16}, job:{r:41, w:10.5, fs:14},
+          wnote:{r:53.0, w:19.0, fs:10}, hrnote:{r:74.0, w:17.8, fs:10} },
+
+        // --- حقل 2 ---
+        { label:'حقل 2', t:38, h:5,
+          name:{r:11.0, w:20.0, fs:13}, sid:{r:32, w:8.70, fs:16}, job:{r:41.10, w:10.5, fs:14},
+          wnote:{r:52.20, w:20, fs:10}, hrnote:{r:74.0, w:17.8, fs:10} },
+
+        // --- حقل 3 ---
+        { label:'حقل 3', t:41.70, h:5,
+          name:{r:7.4, w:27.0, fs:13}, sid:{r:32, w:8.70, fs:16}, job:{r:41, w:10.5, fs:14},
+          wnote:{r:52.0, w:20.0, fs:14}, hrnote:{r:74.0, w:17.8, fs:10} },
+
+        // --- حقل 4 ---
+        { label:'حقل 4', t:46.70, h:5,
+          name:{r:8.4, w:27.0, fs:13}, sid:{r:32, w:8.70, fs:16}, job:{r:41, w:10.5, fs:14},
+          wnote:{r:52.0, w:20, fs:14}, hrnote:{r:74.0, w:17.8, fs:10} },
+
+        // --- حقل 5 ---
+        { label:'حقل 5', t:51.54, h:5,
+          name:{r:7.4, w:27.0, fs:16}, sid:{r:32, w:8.70, fs:16}, job:{r:41.40, w:10.5, fs:14},
+          wnote:{r:52.00, w:20.0, fs:14}, hrnote:{r:74.0, w:17.8, fs:10} },
+
+        // --- حقل 6 ---
+        { label:'حقل 6', t:56.10, h:5,
+          name:{r:12.9, w:18.80, fs:16}, sid:{r:32, w:8.70, fs:16}, job:{r:41.40, w:10.5, fs:14},
+          wnote:{r:52.0, w:20.0, fs:14}, hrnote:{r:74.0, w:19.8, fs:15} },
+
+        // --- حقل 7 ---
+        { label:'حقل 7', t:60.20, h:5,
+          name:{r:12.9, w:18.80, fs:16}, sid:{r:32, w:8.70, fs:16}, job:{r:41.40, w:10.5, fs:14},
+          wnote:{r:52.0, w:20.0, fs:14}, hrnote:{r:74.0, w:19.8, fs:10} },
+
+        // --- حقل 8 ---
+        { label:'حقل 8', t:64.22, h:4,
+          name:{r:12.9, w:18.80, fs:16}, sid:{r:32, w:8.70, fs:16}, job:{r:41.40, w:10.5, fs:14},
+          wnote:{r:52.0, w:20.0, fs:17}, hrnote:{r:74.0, w:19.8, fs:10} },
+
+        // --- حقل 9 ---
+        { label:'حقل 9', t:68.90, h:5,
+          name:{r:12.9, w:18.80, fs:16}, sid:{r:32, w:8.70, fs:16}, job:{r:41.40, w:10.5, fs:14},
+          wnote:{r:52.0, w:20.0, fs:14}, hrnote:{r:74.0, w:19.8, fs:10} },
+
+        // --- حقل 10 ---
+        { label:'حقل 10', t:73.70, h:4,
+          name:{r:12.9, w:18.80, fs:16}, sid:{r:32, w:8.70, fs:16}, job:{r:41.40, w:10.5, fs:14},
+          wnote:{r:52.0, w:20.0, fs:17}, hrnote:{r:74.0, w:19.8, fs:10} },
+
+        // --- حقل 11 ---
+        { label:'حقل 11', t:77.30, h:5,
+          name:{r:12.9, w:18.80, fs:16}, sid:{r:32, w:8.70, fs:16}, job:{r:41.40, w:10.5, fs:14},
+          wnote:{r:52.0, w:20.0, fs:14}, hrnote:{r:74.0, w:19.8, fs:10} },
+    ];
+
+    // بناء حقول كل صف بشكل مستقل
+    ROWS.forEach((row, i) => {
+        const ri = i;
+        const pad = 0.3;
+
+        // الاسم
+        mkFld(ov,{id:'r'+i+'_name', t:row.t+pad, r:row.name.r, w:row.name.w, h:row.h-pad*2,
+            fs:row.name.fs, fw:'bold',
+            val:()=>{ const e=emps[ri]; return e?e.name:''; }});
+
+        // الرقم الوظيفي / المدني
+        mkFld(ov,{id:'r'+i+'_sid', t:row.t+pad, r:row.sid.r, w:row.sid.w, h:row.h-pad*2,
+            fs:row.sid.fs,
+            cls: (()=>{ const e=emps[ri]; return e&&e.numType==='مدني'?'id-type-note':''; })(),
+            val:()=>{
+                const e=emps[ri]; if(!e) return '';
+                if(e.numType==='مدني') return 'الرقم المدني\n'+e.staffNumber;
+                return e.staffNumber;
+            }});
+
+        // المسمى الوظيفي
+        mkFld(ov,{id:'r'+i+'_job', t:row.t+pad, r:row.job.r, w:row.job.w, h:row.h-pad*2,
+            fs:row.job.fs, fw:'bold',
+            val:()=>{ const e=emps[ri]; return e?e.job:''; }});
+
+        // ملاحظات جهة العمل
+        mkFld(ov,{id:'r'+i+'_wn', t:row.t+pad, r:row.wnote.r, w:row.wnote.w, h:row.h-pad*2,
+            fs:row.wnote.fs,
+            val:()=>{ const e=emps[ri]; return e?(e.workNotes||''):''; }});
+
+        // ملاحظات الموارد البشرية
+        mkFld(ov,{id:'r'+i+'_hn', t:row.t+pad, r:row.hrnote.r, w:row.hrnote.w, h:row.h-pad*2,
+            fs:row.hrnote.fs,
+            val:()=>{ const e=emps[ri]; return e?(e.hrNotes||''):''; }});
+    });
+}
+
+/* helper: create a field element */
+function mkFld(parent, o){
+    const el = document.createElement('span');
+    el.className = 'fld' + (o.cls?' '+o.cls:'') + (o.edit?' fld-editable':'');
+    el.id = o.id||'';
+    el.style.cssText = `top:${o.t}%; right:${o.r}%; width:${o.w}%; height:${o.h}%;`
+        + `font-size:${o.fs||13}px;`
+        + (o.fw?`font-weight:${o.fw};`:'')
+        + (o.clr?`color:${o.clr};`:'');
+
+    const v = o.val? o.val() : '';
+    if(v.includes('\n')){ el.innerHTML = v.replace(/\n/g,'<br>'); }
+    else { el.textContent = v; }
+    el._vfn = o.val;
+
+    if(o.edit){
+        el.contentEditable = true;
+        el.addEventListener('blur', function(){
+            if(o.onch) o.onch(this.textContent.trim());
+        });
+    }
+
+    parent.appendChild(el);
+    return el;
+}
+
+/* ---------- refresh ---------- */
+function refresh(){
+    document.querySelectorAll('#overlay .fld').forEach(el=>{
+        if(el._vfn && !el.isContentEditable){
+            const v = el._vfn();
+            if(v.includes('\n')) el.innerHTML = v.replace(/\n/g,'<br>');
+            else el.textContent = v;
+        }
+    });
+    // also update editable h_wp
+    const wpEl = document.getElementById('h_wp');
+    if(wpEl) wpEl.textContent = wp;
+    sts('تم التحديث - '+AR_M[cMonth-1]+' '+cYear);
+}
+
+/* ---------- save / load ---------- */
+function skey(){ return STORE_PFX+cYear+'_'+cMonth; }
+
+function saveData(silent){
+    const d = { month:cMonth, year:cYear, workplace:wp, employees:emps, at:new Date().toISOString() };
+    localStorage.setItem(skey(), JSON.stringify(d));
+    saveEmpsLS(); saveWpLS();
+    ToolbarPro.updateLastSave();
+    sts('تم الحفظ - '+AR_M[cMonth-1]+' '+cYear);
+    if(!silent){
+        ToolbarPro.toast('تم حفظ البيانات', 'ok', 1500);
+        setTimeout(()=>{ location.href = 'index.html'; }, 1200);
+    }
+}
+
+function loadData(){
+    const s = localStorage.getItem(skey());
+    if(s){
+        try{
+            const d=JSON.parse(s);
+            if(d.workplace){wp=d.workplace; saveWpLS();}
+            if(d.employees){emps=d.employees; saveEmpsLS();}
+        }catch(e){}
+    }
+    refresh();
+}
+
+/* ---------- employee modal ---------- */
+function openEmpModal(){
+    const tb = document.getElementById('empTbody'); tb.innerHTML='';
+    emps.forEach((e,i)=> addEmpTR(tb,e,i));
+    document.getElementById('empModal').style.display='block';
+}
+function closeEmpModal(){ document.getElementById('empModal').style.display='none'; }
+
+function addEmpTR(tb,emp,idx){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td style="text-align:center">${idx+1}</td>
+        <td><input value="${emp.name}" data-f="name" data-i="${idx}"></td>
+        <td><input value="${emp.staffNumber}" data-f="staffNumber" data-i="${idx}"></td>
+        <td><select data-f="numType" data-i="${idx}">
+            <option value="وظيفي" ${emp.numType==='وظيفي'?'selected':''}>وظيفي</option>
+            <option value="مدني" ${emp.numType==='مدني'?'selected':''}>مدني</option>
+        </select></td>
+        <td><input value="${emp.job}" data-f="job" data-i="${idx}"></td>
+        <td><input value="${emp.workNotes||''}" data-f="workNotes" data-i="${idx}"></td>
+        <td><button class="btn" style="background:#dc3545" onclick="delEmp(${idx})">حذف</button></td>`;
+    tb.appendChild(tr);
+}
+
+function addEmpRow(){
+    emps.push({name:'',staffNumber:'',numType:'وظيفي',job:'',workNotes:'',hrNotes:''});
+    const tb=document.getElementById('empTbody');
+    addEmpTR(tb, emps[emps.length-1], emps.length-1);
+}
+
+function delEmp(i){
+    if(!confirm('حذف هذا الموظف؟')) return;
+    emps.splice(i,1); openEmpModal();
+}
+
+function saveEmps(){
+    document.querySelectorAll('#empTbody input, #empTbody select').forEach(el=>{
+        const i=+el.dataset.i, f=el.dataset.f;
+        if(emps[i]&&f) emps[i][f]=el.value;
+    });
+    saveEmpsLS(); buildFields(); refresh();
+    sts('تم حفظ الموظفين'); closeEmpModal();
+}
+
+function sts(m){ ToolbarPro.sts(m); }
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+<script src="js/arabic-fonts.js"></script>
+<script src="js/field-mover.js"></script>
+</body>
+</html>

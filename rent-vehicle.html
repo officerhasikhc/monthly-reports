@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تقرير حركة السيارة المستأجرة</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        @media print {
+            body { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+            .no-print { display:none !important; }
+            .form-container { box-shadow:none !important; margin-top:0 !important; }
+            .overlay .fld { border:none !important; background:transparent !important; }
+        }
+        body {
+            font-family:'Traditional Arabic','Simplified Arabic','Arial',sans-serif;
+            background:#e8e8e8; direction:rtl;
+        }
+        /* Toolbar styles are now in toolbar-pro.js */
+        .form-container {
+            position:relative; width:750px;
+            margin:50px auto 30px auto; background:#fff;
+            box-shadow:0 2px 10px rgba(0,0,0,.12);
+        }
+        .form-container img.bg {
+            width:100%; display:block;
+            user-select:none; -webkit-user-drag:none; pointer-events:none;
+        }
+        .overlay {
+            position:absolute; top:0; left:0; right:0; bottom:0;
+            pointer-events:none;
+        }
+        .overlay .fld {
+            position:absolute; pointer-events:auto;
+            display:flex; align-items:center; justify-content:center;
+            font-family:'Traditional Arabic','Simplified Arabic','Arial',sans-serif;
+            text-align:center; overflow:hidden; white-space:nowrap;
+            border:1px dashed rgba(0,80,180,.2);
+            background:rgba(255,255,255,.6); color:#222; padding:0 2px;
+            font-size:11px;
+        }
+        .overlay .fld.transparent { border:none; background:transparent; }
+        .overlay .fld-editable { cursor:text; }
+        .overlay .fld-editable:hover {
+            border-color:rgba(0,80,180,.4); background:rgba(255,255,240,.7);
+        }
+        /* Status bar styles are now in toolbar-pro.js */
+        /* Trip Add Modal */
+        .modal-bg {
+            display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+            background:rgba(0,0,0,.45); z-index:2000; direction:rtl;
+        }
+        .modal-box {
+            background:#fff; width:500px; margin:100px auto;
+            border-radius:6px; padding:20px;
+        }
+        .modal-box h3 { margin-bottom:12px; color:#1a3a5c; font-family:inherit; }
+        .modal-box label { display:block; margin:8px 0 3px; font-size:13px; }
+        .modal-box input, .modal-box select {
+            width:100%; padding:6px 8px; font-family:inherit; font-size:13px;
+            border:1px solid #ccc; border-radius:3px;
+        }
+        .modal-box .btn {
+            border:none; padding:7px 20px; border-radius:3px;
+            cursor:pointer; font-family:inherit; font-size:12px; color:#fff;
+            margin-top:12px;
+        }
+    </style>
+</head>
+<body>
+
+<script src="js/toolbar-pro.js"></script>
+<!-- Toolbar is built by toolbar-pro.js -->
+
+<!-- FORM -->
+<div class="form-container" id="formWrap">
+    <img class="bg" src="rent-vehicle.png" id="bgImg" alt="rent vehicle form">
+    <div class="overlay" id="overlay"></div>
+</div>
+
+<!-- Status bar is built by toolbar-pro.js -->
+
+<!-- TRIP MODAL -->
+<div class="modal-bg no-print" id="tripModal">
+    <div class="modal-box">
+        <h3>إضافة / تعديل رحلة</h3>
+        <label>اليوم (رقم اليوم في الشهر):</label>
+        <input type="number" id="tripDay" min="1" max="31" placeholder="مثال: 5">
+        <label>الوجهة:</label>
+        <select id="tripDest">
+            <option value="داخل نطاق الولاية">داخل نطاق الولاية</option>
+            <option value="صلاله">صلاله</option>
+            <option value="مرباط">مرباط</option>
+            <option value="طاقة">طاقة</option>
+            <option value="ثمريت">ثمريت</option>
+            <option value="شليم">شليم</option>
+            <option value="رخيوت">رخيوت</option>
+            <option value="المزيونة">المزيونة</option>
+            <option value="مقشن">مقشن</option>
+        </select>
+        <label>أو أدخل وجهة أخرى:</label>
+        <input type="text" id="tripDestCustom" placeholder="اكتب اسم المدينة">
+        <div style="margin-top:14px; display:flex; gap:6px;">
+            <button class="btn" style="background:#2a6496" onclick="addTrip()">إضافة</button>
+            <button class="btn" style="background:#dc3545" onclick="clearTripDay()">مسح يوم</button>
+            <button class="btn" style="background:#6c757d" onclick="closeTripModal()">إغلاق</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ================================================================
+//  RENT VEHICLE REPORT MODULE
+//  Image: 1820 x 2573 pixels (portrait)
+// ================================================================
+
+const STORE_PFX = 'moh_rentveh_';
+const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const AR_DAYS = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+
+// Defaults
+const DEF_OWNER = 'ورثة سالم بن شعبان العبيداني';
+const DEF_CAR_NUM = '8753';
+const DEF_WILAYA = 'سدح';
+const DEF_CENTER = 'مركز صحي / حاسك';
+const DEF_DAILY_WAGE = '';
+const DEF_WORK_NOTE = 'المذكور قام بمهام عمله على اكمل وجه وذلك حسب الاتفاقية, يرجى التكرم مشكورين بتوجيه المختصين بصرف مستحقاته الشهرية لهذا الشهر.';
+
+let cMonth, cYear, tripData;
+
+function getDefaultTrips(month, year){
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const trips = {};
+    for(let d=1; d<=daysInMonth; d++){
+        const dt = new Date(year, month-1, d);
+        const dow = dt.getDay(); // 0=Sun..6=Sat
+        // Friday=5, Saturday=6 are off
+        if(dow === 5 || dow === 6){
+            trips[d] = ''; // empty = off day
+        } else {
+            trips[d] = 'داخل نطاق الولاية';
+        }
+    }
+    return trips;
+}
+
+function getDefaultData(month, year){
+    return {
+        owner: DEF_OWNER,
+        carNumber: DEF_CAR_NUM,
+        wilaya: DEF_WILAYA,
+        center: DEF_CENTER,
+        dailyWage: DEF_DAILY_WAGE,
+        workNote: DEF_WORK_NOTE,
+        month: month,
+        year: year,
+        trips: getDefaultTrips(month, year)
+    };
+}
+
+/* ---------- init ---------- */
+function init(){
+    ToolbarPro.build({
+        title: 'حركة السيارة المستأجرة',
+        extraButtons: [
+            { text:'إضافة رحلة', onclick:'openTripModal()' }
+        ],
+        onSave: function(silent){ saveData(silent); }
+    });
+
+    setupSelectors();
+    const img = document.getElementById('bgImg');
+    const go = ()=>{ loadData(); buildFields(); sts('جاهز'); };
+    img.complete ? go() : img.onload = go;
+}
+
+function setupSelectors(){
+    const now = new Date();
+    cMonth = now.getMonth()+1;
+    cYear = now.getFullYear();
+    const sM = document.getElementById('selMonth');
+    const sY = document.getElementById('selYear');
+    AR_M.forEach((m,i)=>{ sM.add(new Option(m,i+1,false,i+1===cMonth)); });
+    for(let y=2024;y<=2032;y++){ sY.add(new Option(y,y,false,y===cYear)); }
+    sM.onchange = ()=>{ cMonth=+sM.value; loadData(); buildFields(); };
+    sY.onchange = ()=>{ cYear=+sY.value; loadData(); buildFields(); };
+}
+
+/* ---------- save / load ---------- */
+function skey(){ return STORE_PFX+cYear+'_'+cMonth; }
+
+function saveData(silent){
+    readFieldsToData();
+    localStorage.setItem(skey(), JSON.stringify(tripData));
+    ToolbarPro.updateLastSave();
+    sts('تم الحفظ - '+AR_M[cMonth-1]+' '+cYear);
+    if(!silent){
+        ToolbarPro.toast('تم حفظ البيانات', 'ok', 1500);
+        setTimeout(()=>{ location.href = 'index.html'; }, 1200);
+    }
+}
+
+function loadData(){
+    const s = localStorage.getItem(skey());
+    if(s){
+        try { tripData = JSON.parse(s); } catch(e){ tripData = getDefaultData(cMonth, cYear); }
+    } else {
+        tripData = getDefaultData(cMonth, cYear);
+    }
+}
+
+function readFieldsToData(){
+    // Read editable header fields
+    const el = (id) => document.getElementById(id);
+    if(el('f_owner')) tripData.owner = el('f_owner').textContent.trim();
+    if(el('f_carnum')) tripData.carNumber = el('f_carnum').textContent.trim();
+    if(el('f_wage')) tripData.dailyWage = el('f_wage').textContent.trim();
+}
+
+/* ================================================================
+   BUILD FIELDS
+   Image: 1820 x 2573 px
+   ================================================================ */
+function buildFields(){
+    const ov = document.getElementById('overlay');
+    ov.innerHTML = '';
+    const td = tripData;
+    const daysInMonth = new Date(cYear, cMonth, 0).getDate();
+
+    // Count work days
+    let workDays = 0;
+    for(let d=1; d<=daysInMonth; d++){
+        if(td.trips[d] && td.trips[d] !== '') workDays++;
+    }
+
+    // ---- HEADER FIELDS ----
+    // ولاية: y≈5.2%, from right≈37%
+    mkFld(ov,{id:'f_wilaya', t:15.30, r:34, w:14, h:3, fs:24, clr:'#556b2f', fw:'bold',
+        val: td.wilaya});
+
+    // خلال شهر: y≈5.2%, from right≈14%
+    mkFld(ov,{id:'f_monthdate', t:16.10, r:66.50, w:20, h:2, fs:18, fw:'bold', clr:'#c00',
+        val: cYear+'/'+String(cMonth).padStart(2,'0')+'/01'});
+
+    // اسم مالك السيارة: y≈7%
+    mkFld(ov,{id:'f_owner', t:18.30, r:34, w:40, h:3, fs:22, clr:'#556b2f', fw:'bold', edit:true,
+        val: td.owner});
+
+    // رقم السيارة: y≈7%, near left
+    mkFld(ov,{id:'f_carnum', t:19, r:77.50, w:12, h:2, fs:18, fw:'bold', clr:'#556b2f', edit:true,
+        val: td.carNumber});
+
+    // الاجر اليومي: y≈12% area on left side
+    mkFld(ov,{id:'f_wage', t:11.5, r:3, w:12, h:1.5, fs:12, edit:true,
+        val: td.dailyWage});
+
+    // أيام العمل: y≈14%
+    mkFld(ov,{id:'f_workdays', t:31.5, r:80.40, w:6, h:2, fs:17, fw:'bold', clr:'#006600',
+        val: String(workDays)});
+
+    // ملاحظات عن العمل: y≈16-22% - olive green text
+    mkFld(ov,{id:'f_worknote', t:35, r:60, w:33, h:12, fs:20, clr:'#556b2f',
+        val: td.workNote, wrap:true});
+
+    // =============================================
+    // TABLE: 31 day rows - كل يوم بإحداثياته المستقلة
+    // t=top%, h=height% لكل صف
+    // dayName: {r, w, fs} - عمود اسم اليوم
+    // scope: {r, w, fs} - عمود نطاق العمل
+    // يمكنك تعديل أي يوم بشكل مستقل
+    // =============================================
+    const DAY_ROWS = [
+        // --- اليوم 1 ---
+        { day:1,  t:26.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 2 ---
+        { day:2,  t:28.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 3 ---
+        { day:3,  t:30.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 4 ---
+        { day:4,  t:32.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 5 ---
+        { day:5,  t:34.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 6 ---
+        { day:6,  t:36.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 7 ---
+        { day:7,  t:38.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 8 ---
+        { day:8,  t:40.40, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 9 ---
+        { day:9,  t:42.50, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 10 ---
+        { day:10, t:44.30, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 11 ---
+        { day:11, t:46.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 12 ---
+        { day:12, t:48.50, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 13 ---
+        { day:13, t:50.50, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 14 ---
+        { day:14, t:52.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 15 ---
+        { day:15, t:54.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 16 ---
+        { day:16, t:56.50, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 17 ---
+        { day:17, t:58.70, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 18 ---
+        { day:18, t:60.60, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 19 ---
+        { day:19, t:62.90, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 20 ---
+        { day:20, t:64.70, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 21 ---
+        { day:21, t:66.70, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 22 ---
+        { day:22, t:68.80, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 23 ---
+        { day:23, t:71, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 24 ---
+        { day:24, t:73.10, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 25 ---
+        { day:25, t:75.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 26 ---
+        { day:26, t:77, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 27 ---
+        { day:27, t:79.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 28 ---
+        { day:28, t:81.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 29 ---
+        { day:29, t:83.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 30 ---
+        { day:30, t:85.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:20, fs:16} },
+        // --- اليوم 31 ---
+        { day:31, t:87.20, h:2.20, dayName:{r:14.5, w:10, fs:16}, scope:{r:24, w:19.50, fs:16} },
+    ];
+
+    // بناء حقول كل يوم بشكل مستقل
+    DAY_ROWS.forEach((row) => {
+        const d = row.day;
+        if(d > daysInMonth) return; // تخطي الأيام الزائدة عن الشهر
+
+        const dt = new Date(cYear, cMonth-1, d);
+        const dow = dt.getDay();
+        const dayName = AR_DAYS[dow];
+        const trip = td.trips[d] || '';
+        const isOff = (dow === 5 || dow === 6);
+
+        // اسم اليوم
+        mkFld(ov,{id:'f_d'+d+'_name', t:row.t+0.1, r:row.dayName.r, w:row.dayName.w,
+            h:row.h-0.3, fs:row.dayName.fs,
+            val: dayName});
+
+        // نطاق العمل / الوجهة
+        if(!isOff || trip){
+            mkFld(ov,{id:'f_d'+d+'_scope', t:row.t+0.1, r:row.scope.r, w:row.scope.w,
+                h:row.h-0.3, fs:row.scope.fs,
+                val: trip,
+                clr: trip==='صلاله'?'#0066cc':(trip==='داخل نطاق الولاية'?'#333':'#8b0000')});
+        }
+    });
+}
+
+/* helpers */
+function mkFld(parent, o){
+    const el = document.createElement('span');
+    el.className = 'fld' + (o.edit?' fld-editable':'');
+    el.id = o.id||'';
+    let css = `top:${o.t}%; right:${o.r}%; width:${o.w}%; height:${o.h}%;`
+        + `font-size:${o.fs||11}px;`
+        + (o.fw?`font-weight:${o.fw};`:'')
+        + (o.clr?`color:${o.clr};`:'');
+    if(o.wrap) css += 'white-space:normal; line-height:1.3; text-align:right; padding:2px 4px;';
+    el.style.cssText = css;
+    el.textContent = o.val||'';
+    if(o.edit) el.contentEditable = true;
+    parent.appendChild(el);
+    return el;
+}
+
+/* ---------- Trip Modal ---------- */
+function openTripModal(){ document.getElementById('tripModal').style.display='block'; }
+function closeTripModal(){ document.getElementById('tripModal').style.display='none'; }
+
+function addTrip(){
+    const day = parseInt(document.getElementById('tripDay').value);
+    const daysInMonth = new Date(cYear, cMonth, 0).getDate();
+    if(!day || day<1 || day>daysInMonth){
+        alert('رقم يوم غير صحيح'); return;
+    }
+    let dest = document.getElementById('tripDestCustom').value.trim();
+    if(!dest) dest = document.getElementById('tripDest').value;
+    tripData.trips[day] = dest;
+    buildFields();
+    sts('تم إضافة رحلة ليوم '+day);
+}
+
+function clearTripDay(){
+    const day = parseInt(document.getElementById('tripDay').value);
+    if(!day){ alert('حدد رقم اليوم'); return; }
+    tripData.trips[day] = '';
+    buildFields();
+    sts('تم مسح يوم '+day);
+}
+
+function sts(m){ ToolbarPro.sts(m); }
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+<script src="js/arabic-fonts.js"></script>
+<script src="js/field-mover.js"></script>
+</body>
+</html>

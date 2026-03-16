@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تقرير خدمات النظافة أو التغذية</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        @media print {
+            body { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+            .no-print { display:none !important; }
+            .form-container { box-shadow:none !important; margin-top:0 !important; }
+            .overlay .fld { border:none !important; background:transparent !important; }
+        }
+        body {
+            font-family:'Traditional Arabic','Simplified Arabic','Arial',sans-serif;
+            background:#e8e8e8; direction:rtl;
+        }
+        /* Toolbar styles are now in toolbar-pro.js */
+        /* FORM */
+        .form-container {
+            position:relative; width:750px;
+            margin:50px auto 30px auto; background:#fff;
+            box-shadow:0 2px 10px rgba(0,0,0,.12);
+        }
+        .form-container img.bg {
+            width:100%; display:block;
+            user-select:none; -webkit-user-drag:none; pointer-events:none;
+        }
+        /* OVERLAY */
+        .overlay {
+            position:absolute; top:0; left:0; right:0; bottom:0;
+            pointer-events:none;
+        }
+        .overlay .fld {
+            position:absolute; pointer-events:auto;
+            display:flex; align-items:center; justify-content:center;
+            font-family:'Traditional Arabic','Simplified Arabic','Arial',sans-serif;
+            text-align:center; overflow:hidden; white-space:nowrap;
+            border:1px dashed rgba(0,80,180,.2);
+            background:rgba(255,255,255,.6); color:#222; padding:0 3px;
+        }
+        .overlay .fld.transparent { border:none; background:transparent; }
+        .overlay .fld-editable { cursor:text; }
+        .overlay .fld-editable:hover {
+            border-color:rgba(0,80,180,.4); background:rgba(255,255,240,.7);
+        }
+        .overlay .fld select {
+            width:100%; height:100%; border:none; background:transparent;
+            font-family:inherit; font-size:inherit; text-align:center;
+            cursor:pointer; outline:none;
+        }
+        /* Status bar styles are now in toolbar-pro.js */
+    </style>
+</head>
+<body>
+
+<script src="js/toolbar-pro.js"></script>
+<!-- Toolbar is built by toolbar-pro.js -->
+
+<!-- FORM -->
+<div class="form-container" id="formWrap">
+    <img class="bg" src="clean.png" id="bgImg" alt="clean services form">
+    <div class="overlay" id="overlay"></div>
+</div>
+
+<!-- Status bar is built by toolbar-pro.js -->
+
+<script>
+// ================================================================
+//  CLEAN SERVICES REPORT MODULE
+// ================================================================
+
+const STORE_PFX = 'moh_clean_';
+
+// Image: 1788 x 2564 (portrait)
+const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+// Hijri month names (approximate)
+const HIJRI_M = ['محرم','صفر','ربيع الأول','ربيع الثاني','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوال','ذو القعدة','ذو الحجة'];
+
+// 12 service items as per the form
+const SERVICE_LABELS = [
+    'أ. عدد العمال المعينين في (مستشفى / مركز)',
+    '2. الالتزام بالتغذية (للمستشفيات)',
+    '3. الالتزام بنسبة التعمين',
+    '4. العمال تحت كفالة الشركة و سريان بطاقة العامل',
+    '5. الالتزام بالنظافة العامة بالمؤسسة وحرمها',
+    '6. الالتزام باستئصال الآفات والحشرات بالمؤسسة وحرمها',
+    '7. مطابقة طبيعة عمل العامل مع مسمى المهنة',
+    '8. الالتزام بزي موحد',
+    '9. توفير الصابون السائل والمناشف واكياس النفايات',
+    '10. توفير جميع المواد المطهرة والكيماوية والمعطرة',
+    '11. الالتزام بتنفيذ التعليمات',
+    '12. أي أعمال أخرى يتطلب عملها'
+];
+
+// Default data
+const DEF_COMPANY = 'ناصر البرعمي';
+const DEF_CENTER = 'حاسك الصحي';
+const DEF_WORKERS = '2';
+
+let cMonth, cYear, reportData;
+
+// ======== تاريخ هجري حسب سلطنة عمان ========
+function getTodayHijri(){
+    try {
+        const now = new Date();
+        // استخدام Intl API مع تقويم أم القرى (المعتمد في عمان)
+        const hijriFmt = new Intl.DateTimeFormat('ar-OM-u-ca-islamic-umalqura', {
+            day:'numeric', month:'long', year:'numeric'
+        });
+        const parts = hijriFmt.formatToParts(now);
+        let day='', month='', year='';
+        parts.forEach(p=>{
+            if(p.type==='day') day = p.value;
+            if(p.type==='month') month = p.value;
+            if(p.type==='year') year = p.value;
+        });
+        // صيغة RTL: DD/الشهر/YYYY هـ (من اليمين: يوم ثم شهر ثم سنة ثم هـ)
+        return day + '/' + month + '/' + year + ' هـ';
+    } catch(e){
+        return '';
+    }
+}
+
+function getTodayGreg(){
+    const now = new Date();
+    const yy = now.getFullYear();
+    const mm = String(now.getMonth()+1).padStart(2,'0');
+    const dd = String(now.getDate()).padStart(2,'0');
+    return yy + '/' + mm + '/' + dd;
+}
+
+function getDefaultData(){
+    const now = new Date();
+    const m = now.getMonth(); // 0-based, this is the PREVIOUS month's report
+    const y = now.getFullYear();
+    // Report month = previous month
+    const repMonth = m === 0 ? 12 : m; // if Jan, report is Dec
+    const repYear = m === 0 ? y-1 : y;
+
+    const firstDay = new Date(repYear, repMonth-1, 1);
+    const lastDay = new Date(repYear, repMonth, 0);
+
+    const fmtDate = (d) => {
+        const yy = d.getFullYear();
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        return yy+'/'+mm+'/'+dd;
+    };
+
+    const rows = [];
+    for(let i=0; i<12; i++){
+        rows.push({
+            committed: '',       // للصف 1 فقط (عدد العمال)
+            com_om: '-',         // ملتزم عماني
+            com_non: '-',        // ملتزم غير عماني
+            unc_om: '-',         // غير ملتزم عماني
+            unc_non: '-',        // غير ملتزم غير عماني
+            fromDate: fmtDate(firstDay),
+            toDate: fmtDate(lastDay),
+            notes: ''
+        });
+    }
+    // First row (workers count) - 4 حقول أعداد بدل ملتزم/غير ملتزم
+    rows[0].com_om = DEF_WORKERS;
+    rows[0].com_non = '';
+    rows[0].unc_om = '';
+    rows[0].unc_non = '';
+
+    return {
+        company: DEF_COMPANY,
+        center: DEF_CENTER,
+        reportMonthName: AR_M[repMonth-1],
+        reportMonth: repMonth,
+        reportYear: repYear,
+        refNumber: getRefNumber(repMonth, repYear),
+        hijriDate: getTodayHijri(),
+        gregDate: getTodayGreg(),
+        rows: rows
+    };
+}
+
+function getRefNumber(month, year){
+    // م ع خ ص / ظ / 41 / <month> / <year>
+    return 'م ع خ ص/ ظ/ 41/ ' + month + ' /' + year;
+}
+
+function getDaysInMonth(month, year){
+    return new Date(year, month, 0).getDate();
+}
+
+/* ---------- init ---------- */
+function init(){
+    ToolbarPro.build({
+        title: 'تقرير خدمات النظافة',
+        onSave: function(silent){ saveData(silent); }
+    });
+
+    setupSelectors();
+    const img = document.getElementById('bgImg');
+    const go = ()=>{ loadData(); buildFields(); sts('جاهز'); };
+    img.complete ? go() : img.onload = go;
+}
+
+function setupSelectors(){
+    const now = new Date();
+    // Default: show previous month's report
+    cMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+    cYear = now.getMonth() === 0 ? now.getFullYear()-1 : now.getFullYear();
+
+    const sM = document.getElementById('selMonth');
+    const sY = document.getElementById('selYear');
+    AR_M.forEach((m,i)=>{
+        sM.add(new Option(m, i+1, false, i+1===cMonth));
+    });
+    for(let y=2024;y<=2032;y++){ sY.add(new Option(y,y,false,y===cYear)); }
+    sM.onchange = ()=>{ cMonth=+sM.value; loadData(); buildFields(); };
+    sY.onchange = ()=>{ cYear=+sY.value; loadData(); buildFields(); };
+}
+
+/* ---------- save / load ---------- */
+function skey(){ return STORE_PFX+cYear+'_'+cMonth; }
+
+function saveData(silent){
+    // Read current values from fields
+    readFieldsToData();
+    localStorage.setItem(skey(), JSON.stringify(reportData));
+    ToolbarPro.updateLastSave();
+    sts('تم الحفظ - '+AR_M[cMonth-1]+' '+cYear);
+    if(!silent){
+        ToolbarPro.toast('تم حفظ البيانات', 'ok', 1500);
+        setTimeout(()=>{ location.href = 'index.html'; }, 1200);
+    }
+}
+
+function loadData(){
+    const s = localStorage.getItem(skey());
+    if(s){
+        try { reportData = JSON.parse(s); } catch(e){ reportData = getDefaultData(); }
+    } else {
+        reportData = getDefaultData();
+        // Adjust dates for selected month
+        reportData.reportMonth = cMonth;
+        reportData.reportYear = cYear;
+        reportData.reportMonthName = AR_M[cMonth-1];
+        const firstDay = new Date(cYear, cMonth-1, 1);
+        const lastDay = new Date(cYear, cMonth, 0);
+        const fmtD = (d) => d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0');
+        reportData.rows.forEach(r=>{
+            r.fromDate = fmtD(firstDay);
+            r.toDate = fmtD(lastDay);
+        });
+    }
+    // Always refresh auto-calculated fields
+    reportData.refNumber = getRefNumber(cMonth, cYear);
+    reportData.hijriDate = getTodayHijri();
+    reportData.gregDate = getTodayGreg();
+}
+
+function readFieldsToData(){
+    // Read editable fields back into reportData
+    const rd = reportData;
+    const el = (id) => document.getElementById(id);
+    if(el('f_company') && el('f_company').textContent) rd.company = el('f_company').textContent.trim();
+    if(el('f_center') && el('f_center').textContent) rd.center = el('f_center').textContent.trim();
+    if(el('f_month_name') && el('f_month_name').textContent) rd.reportMonthName = el('f_month_name').textContent.trim();
+
+    for(let i=0; i<12; i++){
+        if(i === 0){
+            // حقل 1: عدد العمال - 4 حقول نص
+            const com_om = el('f_r'+i+'_com_om');
+            if(com_om) rd.rows[i].com_om = com_om.textContent.trim();
+            const com_non = el('f_r'+i+'_com_non');
+            if(com_non) rd.rows[i].com_non = com_non.textContent.trim();
+            const unc_om = el('f_r'+i+'_unc_om');
+            if(unc_om) rd.rows[i].unc_om = unc_om.textContent.trim();
+            const unc_non = el('f_r'+i+'_unc_non');
+            if(unc_non) rd.rows[i].unc_non = unc_non.textContent.trim();
+        } else {
+            const com_om = el('f_r'+i+'_com_om');
+            if(com_om) rd.rows[i].com_om = com_om.value||'';
+            const com_non = el('f_r'+i+'_com_non');
+            if(com_non) rd.rows[i].com_non = com_non.value||'';
+            const unc_om = el('f_r'+i+'_unc_om');
+            if(unc_om) rd.rows[i].unc_om = unc_om.value||'';
+            const unc_non = el('f_r'+i+'_unc_non');
+            if(unc_non) rd.rows[i].unc_non = unc_non.value||'';
+        }
+        const from = el('f_r'+i+'_from');
+        if(from) rd.rows[i].fromDate = from.textContent.trim();
+        const to = el('f_r'+i+'_to');
+        if(to) rd.rows[i].toDate = to.textContent.trim();
+        const notes = el('f_r'+i+'_notes');
+        if(notes) rd.rows[i].notes = notes.textContent.trim();
+    }
+}
+
+/* ================================================================
+   BUILD OVERLAY FIELDS
+   Image: 1788 x 2564 pixels (portrait)
+   ================================================================ */
+function buildFields(){
+    const ov = document.getElementById('overlay');
+    ov.innerHTML = '';
+    const rd = reportData;
+
+    // ---- HEADER AREA ----
+    // الرقم: at top-right area, y≈8.5%, x from right≈5%
+    mkFld(ov,{id:'f_refnum', t:7.8, r:3, w:35, h:1.5, fs:11,
+        val: rd.refNumber});
+
+    // التاريخ: (hijri) y≈10%
+    mkFld(ov,{id:'f_hijri', t:9.3, r:3, w:25, h:1.5, fs:11, edit:true,
+        val: rd.hijriDate || ''});
+
+    // الموافق: (gregorian) y≈11.5%
+    mkFld(ov,{id:'f_greg', t:10.8, r:3, w:25, h:1.5, fs:11, edit:true,
+        val: rd.gregDate || ''});
+
+    // شركة (company name): y≈21.5%, in dots area
+    mkFld(ov,{id:'f_company', t:33.20, r:23, w:28, h:3, fs:24, fw:'bold', clr:'#556b2f', edit:true,
+        val: rd.company});
+
+    // مركز (center name): y≈23.5%
+    mkFld(ov,{id:'f_center', t:23.0, r:18, w:30, h:1.8, fs:13, fw:'bold', edit:true,
+        val: rd.center});
+
+    // شهر (month name in text): y≈23.5% near end of line
+    mkFld(ov,{id:'f_month_name', t:23.0, r:3, w:12, h:1.8, fs:13, fw:'bold', clr:'#c00', edit:true,
+        val: rd.reportMonthName});
+
+    // =============================================
+    // TABLE: 12 صف خدمات - كل صف بإحداثياته المستقلة
+    // t=top%, h=height% لكل صف
+    // الأعمدة:
+    //   com_om  = ملتزم عماني       {r, w, fs}
+    //   com_non = ملتزم غير عماني    {r, w, fs}
+    //   unc_om  = غير ملتزم عماني    {r, w, fs}
+    //   unc_non = غير ملتزم غير عماني {r, w, fs}
+    //   fromD   = من (التاريخ)       {r, w, fs}
+    //   toD     = إلى (التاريخ)      {r, w, fs}
+    //   notes   = الملاحظات          {r, w, fs}
+    // =============================================
+    const ROWS = [
+        // --- حقل 1: عدد العمال ---
+        { label:'حقل 1', t:50.50, h:2.3,
+          com_om:{r:39.60, w:6, fs:13}, com_non:{r:51.60, w:6.5, fs:12},
+          unc_om:{r:45.50, w:6, fs:12}, unc_non:{r:57.50, w:6, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 2: الالتزام بالتغذية ---
+        { label:'حقل 2', t:52.30, h:2.3,
+          com_om:{r:39.90, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.50, w:6, fs:12}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 3: الالتزام بنسبة التعمين ---
+        { label:'حقل 3', t:54.50, h:2.3,
+          com_om:{r:39.40, w:7, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:46.20, w:6, fs:12}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 4: العمال تحت كفالة الشركة ---
+        { label:'حقل 4', t:56.70, h:2.3,
+          com_om:{r:39.80, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:46, w:6, fs:12}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 5: الالتزام بالنظافة العامة ---
+        { label:'حقل 5', t:58.70, h:2.3,
+          com_om:{r:39.70, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.90, w:6, fs:12}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 6: الالتزام باستئصال الآفات ---
+        { label:'حقل 6', t:60.70, h:2.3,
+          com_om:{r:39.70, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.90, w:6, fs:12}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 7: مطابقة طبيعة العمل ---
+        { label:'حقل 7', t:63, h:2.3,
+          com_om:{r:39.80, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.80, w:6, fs:13}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 8: الالتزام بزي موحد ---
+        { label:'حقل 8', t:65.30, h:2.3,
+          com_om:{r:39.90, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.50, w:6, fs:13}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 9: توفير الصابون السائل ---
+        { label:'حقل 9', t:67.70, h:2.3,
+          com_om:{r:39.80, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.50, w:6, fs:13}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 10: توفير جميع المواد المطهرة ---
+        { label:'حقل 10', t:69.70, h:2.3,
+          com_om:{r:39.60, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.50, w:6, fs:13}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 11: الالتزام بتنفيذ التعليمات ---
+        { label:'حقل 11', t:71.70, h:2.3,
+          com_om:{r:39.60, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.50, w:6, fs:12}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:12}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+
+        // --- حقل 12: أي أعمال أخرى ---
+        { label:'حقل 12', t:73.70, h:2.3,
+          com_om:{r:39.60, w:6, fs:13}, com_non:{r:51.60, w:7, fs:12},
+          unc_om:{r:45.50, w:6, fs:12}, unc_non:{r:57.50, w:7, fs:12},
+          fromD:{r:65, w:9, fs:13}, toD:{r:74, w:9, fs:13},
+          notes:{r:84.70, w:7, fs:9} },
+    ];
+
+    // بناء حقول كل صف بشكل مستقل
+    ROWS.forEach((row, i) => {
+        const rd_row = rd.rows[i];
+        const pad = 0.1;
+
+        if(i === 0){
+            // حقل 1: عدد العمال - 4 حقول نص لإدخال الأعداد
+            // ملتزم عماني
+            mkFld(ov,{id:'f_r'+i+'_com_om', t:row.t+pad, r:row.com_om.r, w:row.com_om.w, h:row.h-pad*2,
+                fs:row.com_om.fs, fw:'bold', edit:true, val: rd_row.com_om||''});
+
+            // ملتزم غير عماني
+            mkFld(ov,{id:'f_r'+i+'_com_non', t:row.t+pad, r:row.com_non.r, w:row.com_non.w, h:row.h-pad*2,
+                fs:row.com_non.fs, fw:'bold', edit:true, val: rd_row.com_non||''});
+
+            // غير ملتزم عماني
+            mkFld(ov,{id:'f_r'+i+'_unc_om', t:row.t+pad, r:row.unc_om.r, w:row.unc_om.w, h:row.h-pad*2,
+                fs:row.unc_om.fs, fw:'bold', edit:true, val: rd_row.unc_om||''});
+
+            // غير ملتزم غير عماني
+            mkFld(ov,{id:'f_r'+i+'_unc_non', t:row.t+pad, r:row.unc_non.r, w:row.unc_non.w, h:row.h-pad*2,
+                fs:row.unc_non.fs, fw:'bold', edit:true, val: rd_row.unc_non||''});
+        } else {
+            const opts = ['-','ملتزم','غير ملتزم'];
+
+            // ملتزم عماني
+            const comOm = mkSelect(ov,{id:'f_r'+i+'_com_om', t:row.t+pad, r:row.com_om.r, w:row.com_om.w, h:row.h-pad*2,
+                fs:row.com_om.fs, fw:'bold', options:opts, val: rd_row.com_om||'-'});
+
+            // ملتزم غير عماني
+            const comNon = mkSelect(ov,{id:'f_r'+i+'_com_non', t:row.t+pad, r:row.com_non.r, w:row.com_non.w, h:row.h-pad*2,
+                fs:row.com_non.fs, fw:'bold', options:opts, val: rd_row.com_non||'-'});
+
+            // غير ملتزم عماني
+            const uncOm = mkSelect(ov,{id:'f_r'+i+'_unc_om', t:row.t+pad, r:row.unc_om.r, w:row.unc_om.w, h:row.h-pad*2,
+                fs:row.unc_om.fs, fw:'bold', options:opts, val: rd_row.unc_om||'-'});
+
+            // غير ملتزم غير عماني
+            const uncNon = mkSelect(ov,{id:'f_r'+i+'_unc_non', t:row.t+pad, r:row.unc_non.r, w:row.unc_non.w, h:row.h-pad*2,
+                fs:row.unc_non.fs, fw:'bold', options:opts, val: rd_row.unc_non||'-'});
+
+            // ربط الأعمدة: اختيار ملتزم عماني → غير عماني = -
+            linkColumns(comOm, comNon);
+            linkColumns(uncOm, uncNon);
+        }
+
+        // من (التاريخ)
+        mkFld(ov,{id:'f_r'+i+'_from', t:row.t+pad, r:row.fromD.r, w:row.fromD.w, h:row.h-pad*2,
+            fs:row.fromD.fs, edit:true, val: rd_row.fromDate});
+
+        // إلى (التاريخ)
+        mkFld(ov,{id:'f_r'+i+'_to', t:row.t+pad, r:row.toD.r, w:row.toD.w, h:row.h-pad*2,
+            fs:row.toD.fs, edit:true, val: rd_row.toDate});
+
+        // الملاحظات
+        mkFld(ov,{id:'f_r'+i+'_notes', t:row.t+pad, r:row.notes.r, w:row.notes.w, h:row.h-pad*2,
+            fs:row.notes.fs, edit:true, val: rd_row.notes||''});
+    });
+}
+
+/* helpers */
+function mkFld(parent, o){
+    const el = document.createElement('span');
+    el.className = 'fld' + (o.edit?' fld-editable':'');
+    el.id = o.id||'';
+    el.style.cssText = `top:${o.t}%; right:${o.r}%; width:${o.w}%; height:${o.h}%;`
+        + `font-size:${o.fs||12}px;`
+        + (o.fw?`font-weight:${o.fw};`:'')
+        + (o.clr?`color:${o.clr};`:'');
+    el.textContent = o.val||'';
+    if(o.edit) el.contentEditable = true;
+    parent.appendChild(el);
+    return el;
+}
+
+function mkSelect(parent, o){
+    const wrap = document.createElement('span');
+    wrap.className = 'fld';
+    wrap.id = o.id;
+    wrap.style.cssText = `top:${o.t}%; right:${o.r}%; width:${o.w}%; height:${o.h}%;`
+        + `font-size:${o.fs||11}px; padding:0;`
+        + (o.fw?`font-weight:${o.fw};`:'');
+    const sel = document.createElement('select');
+    sel.style.cssText = 'width:100%;height:100%;border:none;background:transparent;font-family:inherit;font-size:inherit;font-weight:inherit;text-align:center;outline:none;cursor:pointer;';
+    (o.options||[]).forEach(v=>{
+        const opt = new Option(v,v,false,v===o.val);
+        sel.add(opt);
+    });
+    sel.value = o.val||o.options[0];
+    wrap.appendChild(sel);
+    // expose .value on wrapper
+    Object.defineProperty(wrap, 'value', {
+        get: ()=>sel.value,
+        set: (v)=>{sel.value=v;}
+    });
+    parent.appendChild(wrap);
+    return wrap;
+}
+
+// ربط عمودين: عند اختيار قيمة في أحدهما (غير -) يصبح الآخر -
+function linkColumns(wrapA, wrapB){
+    const selA = wrapA.querySelector('select');
+    const selB = wrapB.querySelector('select');
+    selA.addEventListener('change', ()=>{
+        if(selA.value !== '-') selB.value = '-';
+    });
+    selB.addEventListener('change', ()=>{
+        if(selB.value !== '-') selA.value = '-';
+    });
+}
+
+function sts(m){ ToolbarPro.sts(m); }
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+<script src="js/arabic-fonts.js"></script>
+<script src="js/field-mover.js"></script>
+</body>
+</html>

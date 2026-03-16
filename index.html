@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام التقارير الشهرية - المديرية العامة للخدمات الصحية</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family:'Traditional Arabic','Simplified Arabic','Arial',sans-serif;
+            background:#f4f5f7; direction:rtl; min-height:100vh;
+        }
+
+        /* ===== LOGIN PAGE ===== */
+        .login-page {
+            display:flex; align-items:center; justify-content:center;
+            min-height:100vh; background:linear-gradient(135deg, #1a3a5c 0%, #2a6496 100%);
+        }
+        .login-box {
+            background:#fff; border-radius:8px; padding:40px 36px;
+            width:380px; box-shadow:0 4px 20px rgba(0,0,0,.2);
+            text-align:center;
+        }
+        .login-box .logo-placeholder {
+            width:80px; height:80px; margin:0 auto 16px;
+            border-radius:50%; background:#e8eef4;
+            display:flex; align-items:center; justify-content:center;
+            color:#1a3a5c; font-size:28px; font-weight:bold;
+        }
+        .login-box h2 {
+            color:#1a3a5c; font-size:18px; margin-bottom:6px;
+        }
+        .login-box .subtitle {
+            color:#666; font-size:13px; margin-bottom:24px;
+        }
+        .login-box label {
+            display:block; text-align:right; font-size:13px;
+            color:#444; margin-bottom:4px;
+        }
+        .login-box input {
+            width:100%; padding:10px 12px; border:1px solid #ccc;
+            border-radius:4px; font-family:inherit; font-size:14px;
+            margin-bottom:16px; direction:ltr; text-align:center;
+        }
+        .login-box input:focus {
+            outline:none; border-color:#2a6496;
+        }
+        .login-box .btn-login {
+            width:100%; padding:10px; background:#1a3a5c; color:#fff;
+            border:none; border-radius:4px; font-size:14px;
+            font-family:inherit; cursor:pointer;
+        }
+        .login-box .btn-login:hover { background:#2a6496; }
+        .login-box .err {
+            color:#c00; font-size:12px; margin-top:8px; display:none;
+        }
+        .login-box .admin-info {
+            margin-top:20px; padding-top:16px; border-top:1px solid #eee;
+            font-size:11px; color:#888; line-height:1.6;
+        }
+
+        /* ===== DASHBOARD ===== */
+        .dashboard { display:none; }
+        .dash-header {
+            background:linear-gradient(180deg, #0e2a47 0%, #1a3f6b 100%);
+            color:#fff; padding:14px 24px;
+            display:flex; align-items:center; justify-content:space-between;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .dash-header h1 { font-size:16px; font-weight:bold; }
+        .dash-header .user-info { font-size:12px; color:#a0c0e0; }
+        .dash-header button {
+            background:#2a6496; color:#fff; border:none;
+            padding:6px 16px; border-radius:4px; cursor:pointer;
+            font-family:inherit; font-size:12px;
+            transition: all 0.15s;
+            display:inline-flex; align-items:center; gap:5px;
+        }
+        .dash-header button:hover { background:#3a7ab6; transform:translateY(-1px); }
+
+        .dash-body { padding:24px; max-width:900px; margin:0 auto; }
+        .dash-body h2 {
+            font-size:16px; color:#1a3a5c; margin-bottom:16px;
+            padding-bottom:8px; border-bottom:2px solid #dde4ec;
+        }
+
+        .report-cards {
+            display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr));
+            gap:16px; margin-bottom:30px;
+        }
+        .report-card {
+            background:#fff; border:1px solid #dde4ec; border-radius:8px;
+            padding:20px; cursor:pointer; transition:all .25s;
+            position:relative; overflow:hidden;
+        }
+        .report-card::before {
+            content:''; position:absolute; top:0; right:0; width:4px; height:100%;
+            background:linear-gradient(180deg, #3b82f6, #1a3a5c); border-radius:0 4px 4px 0;
+        }
+        .report-card:hover {
+            box-shadow:0 4px 16px rgba(0,0,0,.12);
+            transform:translateY(-2px);
+            border-color:#3b82f6;
+        }
+        .report-card h3 {
+            font-size:14px; color:#1a3a5c; margin-bottom:6px;
+        }
+        .report-card p {
+            font-size:12px; color:#666; line-height:1.5;
+        }
+        .report-card .badge {
+            display:inline-block; margin-top:10px;
+            padding:3px 10px; border-radius:10px;
+            font-size:11px; background:#e8f4e8; color:#2a7a2a;
+        }
+        .report-card .badge.warn {
+            background:#fff3e0; color:#b36b00;
+        }
+
+
+        /* Section: saved reports */
+        .saved-section { margin-top:20px; }
+        .saved-section table {
+            width:100%; border-collapse:collapse; font-size:13px;
+            background:#fff; border:1px solid #dde4ec; border-radius:4px;
+        }
+        .saved-section th {
+            background:#1a3a5c; color:#fff; padding:8px 10px;
+            text-align:right;
+        }
+        .saved-section td {
+            padding:7px 10px; border-bottom:1px solid #eee;
+        }
+        .saved-section tr:hover td { background:#f8f9fb; }
+        .saved-section .btn-sm {
+            background:#2a6496; color:#fff; border:none;
+            padding:3px 12px; border-radius:3px; cursor:pointer;
+            font-family:inherit; font-size:11px;
+        }
+
+        .year-select {
+            display:flex; align-items:center; gap:8px; margin-bottom:12px;
+        }
+        .year-select label { font-size:13px; color:#444; }
+        .year-select select {
+            padding:4px 8px; border:1px solid #ccc; border-radius:3px;
+            font-family:inherit; font-size:13px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== LOGIN ===== -->
+<div class="login-page" id="loginPage">
+    <div class="login-box">
+        <div class="logo-placeholder" id="logoArea">MOH</div>
+        <h2>نظام التقارير الشهرية</h2>
+        <div class="subtitle">المديرية العامة للخدمات الصحية بمحافظة ظفار</div>
+        <label>الرقم الوظيفي:</label>
+        <input type="text" id="empIdInput" placeholder="أدخل الرقم الوظيفي" maxlength="10" autofocus>
+        <button class="btn-login" onclick="doLogin()">دخول</button>
+        <div class="err" id="loginErr">الرقم الوظيفي غير صحيح</div>
+        <div class="admin-info">
+            مسؤول النظام: عبدالباقي بن عبدالهاي مرزوق بيت مرواس<br>
+            مشرف إداري - مركز حاسك الصحي
+        </div>
+    </div>
+</div>
+
+<!-- ===== DASHBOARD ===== -->
+<div class="dashboard" id="dashboard">
+    <div class="dash-header">
+        <div>
+            <h1>نظام التقارير الشهرية</h1>
+            <div class="user-info">المديرية العامة للخدمات الصحية بمحافظة ظفار - مركز حاسك الصحي</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:12px;" id="welcomeUser"></span>
+            <button onclick="location.href='settings.html'">الإعدادات</button>
+            <button onclick="doLogout()">تسجيل خروج</button>
+        </div>
+    </div>
+
+    <div class="dash-body">
+        <h2>التقارير المتاحة</h2>
+        <div class="report-cards" id="reportCards">
+            <!-- Generated by JS -->
+        </div>
+
+        <h2>التقارير المحفوظة</h2>
+        <div class="year-select">
+            <label>السنة:</label>
+            <select id="dashYear" onchange="refreshSavedList()"></select>
+        </div>
+        <div class="saved-section" id="savedSection">
+            <table>
+                <thead><tr>
+                    <th>التقرير</th><th>الشهر</th><th>السنة</th><th>تاريخ الحفظ</th><th>إجراء</th>
+                </tr></thead>
+                <tbody id="savedTbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+// ================================================================
+//  INDEX / LOGIN / DASHBOARD
+// ================================================================
+
+const ADMIN_STAFF_ID = '65886';
+const SESSION_KEY = 'moh_session';
+const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+const REPORTS = [
+    {
+        id: 'salary',
+        title: 'كشف الرواتب الشهرية',
+        desc: 'كشف رواتب موظفي العقود الخاصة العاملين بالمؤسسة الصحية',
+        url: 'salary.html',
+        storagePrefix: 'moh_salary_'
+    },
+    {
+        id: 'clean',
+        title: 'تقرير خدمات النظافة أو التغذية',
+        desc: 'تقييم خدمات النظافة المقدمة من الشركة المتعاقد معها',
+        url: 'clean.html',
+        storagePrefix: 'moh_clean_'
+    },
+    {
+        id: 'rentveh',
+        title: 'حركة السيارة المستأجرة',
+        desc: 'التشغيل اليومي للسيارة المستأجرة لمستشفى / مركز صحي حاسك',
+        url: 'rent-vehicle.html',
+        storagePrefix: 'moh_rentveh_'
+    }
+];
+
+/* ---------- Login ---------- */
+function doLogin(){
+    const id = document.getElementById('empIdInput').value.trim();
+    if(id === ADMIN_STAFF_ID){
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({staffId:id, at:Date.now()}));
+        showDashboard();
+    } else {
+        document.getElementById('loginErr').style.display='block';
+    }
+}
+
+function doLogout(){
+    sessionStorage.removeItem(SESSION_KEY);
+    document.getElementById('loginPage').style.display='flex';
+    document.getElementById('dashboard').style.display='none';
+}
+
+function checkSession(){
+    const s = sessionStorage.getItem(SESSION_KEY);
+    if(s){
+        try{
+            const d = JSON.parse(s);
+            if(d.staffId === ADMIN_STAFF_ID) return true;
+        }catch(e){}
+    }
+    return false;
+}
+
+function showDashboard(){
+    document.getElementById('loginPage').style.display='none';
+    document.getElementById('dashboard').style.display='block';
+    document.getElementById('welcomeUser').textContent = 'مرحباً، عبدالباقي مرزوق';
+    buildReportCards();
+    setupDashYear();
+    refreshSavedList();
+}
+
+/* ---------- Enter key for login ---------- */
+document.addEventListener('DOMContentLoaded', ()=>{
+    document.getElementById('empIdInput').addEventListener('keypress', (e)=>{
+        if(e.key==='Enter') doLogin();
+    });
+    if(checkSession()) showDashboard();
+});
+
+/* ---------- Report Cards ---------- */
+function buildReportCards(){
+    const wrap = document.getElementById('reportCards');
+    wrap.innerHTML = '';
+    const now = new Date();
+    const curMonth = now.getMonth()+1;
+    const curYear = now.getFullYear();
+
+    REPORTS.forEach(r=>{
+        const card = document.createElement('div');
+        card.className = 'report-card';
+        card.onclick = ()=> location.href = r.url;
+        card.innerHTML = `<h3>${r.title}</h3><p>${r.desc}</p>`;
+        wrap.appendChild(card);
+    });
+}
+
+/* ---------- Saved Reports List ---------- */
+function setupDashYear(){
+    const sel = document.getElementById('dashYear');
+    sel.innerHTML = '';
+    const curYear = new Date().getFullYear();
+    for(let y=2024; y<=curYear+1; y++){
+        sel.add(new Option(y, y, false, y===curYear));
+    }
+}
+
+function refreshSavedList(){
+    const year = +document.getElementById('dashYear').value;
+    const tbody = document.getElementById('savedTbody');
+    tbody.innerHTML = '';
+
+    let found = false;
+    REPORTS.forEach(r=>{
+        for(let m=1; m<=12; m++){
+            const key = r.storagePrefix + year + '_' + m;
+            const s = localStorage.getItem(key);
+            if(s){
+                found = true;
+                let savedAt = '--';
+                try {
+                    const d = JSON.parse(s);
+                    if(d.at) savedAt = new Date(d.at).toLocaleDateString('ar-OM');
+                    else if(d.savedAt) savedAt = new Date(d.savedAt).toLocaleDateString('ar-OM');
+                } catch(e){}
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.title}</td>
+                    <td>${AR_M[m-1]}</td>
+                    <td>${year}</td>
+                    <td>${savedAt}</td>
+                    <td>
+                        <button class="btn-sm" onclick="location.href='${r.url}'">فتح</button>
+                    </td>`;
+                tbody.appendChild(tr);
+            }
+        }
+    });
+
+    if(!found){
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="5" style="text-align:center; color:#999; padding:16px;">لا توجد تقارير محفوظة لهذه السنة</td>';
+        tbody.appendChild(tr);
+    }
+}
+</script>
+</body>
+</html>
