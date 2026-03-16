@@ -6,9 +6,14 @@
     <title>تقرير خدمات النظافة أو التغذية</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        @page { size: landscape; margin: 5mm; }
+        @page { size: landscape; margin: 0mm; }
         @media print {
-            body {
+            html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
                 -webkit-print-color-adjust:exact !important;
                 print-color-adjust:exact !important;
                 background:#fff !important;
@@ -16,15 +21,15 @@
             .no-print { display:none !important; }
             .form-container {
                 box-shadow:none !important;
-                margin:0 auto !important;
-                width:100% !important;
-                max-width:100% !important;
-                page-break-inside:avoid;
-                break-inside:avoid;
-            }
-            .form-container img.bg {
-                width:100% !important;
-                height:auto !important;
+                margin:0 !important;
+                width:100vw !important;
+                height:100vh !important;
+                aspect-ratio: auto !important;
+                page-break-inside:avoid !important;
+                break-inside:avoid !important;
+                page-break-after:avoid !important;
+                background-size:100% 100% !important;
+                background-repeat:no-repeat !important;
             }
             .overlay .fld { border:none !important; background:transparent !important; }
         }
@@ -36,12 +41,10 @@
         /* FORM */
         .form-container {
             position:relative; width:750px;
-            margin:50px auto 30px auto; background:#fff;
+            aspect-ratio: 1788 / 2564;
+            margin:50px auto 30px auto;
+            background:#fff url('clean.png') no-repeat center/100% 100%;
             box-shadow:0 2px 10px rgba(0,0,0,.12);
-        }
-        .form-container img.bg {
-            width:100%; display:block;
-            user-select:none; -webkit-user-drag:none; pointer-events:none;
         }
         /* OVERLAY */
         .overlay {
@@ -76,7 +79,6 @@
 
 <!-- FORM -->
 <div class="form-container" id="formWrap">
-    <img class="bg" src="clean.png" id="bgImg" alt="clean services form">
     <div class="overlay" id="overlay"></div>
 </div>
 
@@ -215,9 +217,7 @@ function init(){
     });
 
     setupSelectors();
-    const img = document.getElementById('bgImg');
-    const go = ()=>{ loadData(); buildFields(); sts('جاهز'); };
-    img.complete ? go() : img.onload = go;
+    loadData(); buildFields(); sts('جاهز');
 }
 
 function setupSelectors(){
