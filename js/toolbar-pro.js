@@ -114,7 +114,12 @@ const ToolbarPro = (function(){
 /* ========== طباعة ========== */
 @media print {
     .toolbar-pro, .status-bar-pro, .tb-notify, .no-print { display: none !important; }
-    .form-container { box-shadow: none !important; margin-top: 0 !important; }
+    .form-container {
+        box-shadow: none !important;
+        margin: 0 auto !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
     .overlay .fld { border: none !important; background: transparent !important; }
 }
 

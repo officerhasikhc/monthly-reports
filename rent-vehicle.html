@@ -6,10 +6,26 @@
     <title>تقرير حركة السيارة المستأجرة</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
+        @page { size: landscape; margin: 5mm; }
         @media print {
-            body { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+            body {
+                -webkit-print-color-adjust:exact !important;
+                print-color-adjust:exact !important;
+                background:#fff !important;
+            }
             .no-print { display:none !important; }
-            .form-container { box-shadow:none !important; margin-top:0 !important; }
+            .form-container {
+                box-shadow:none !important;
+                margin:0 auto !important;
+                width:100% !important;
+                max-width:100% !important;
+                page-break-inside:avoid;
+                break-inside:avoid;
+            }
+            .form-container img.bg {
+                width:100% !important;
+                height:auto !important;
+            }
             .overlay .fld { border:none !important; background:transparent !important; }
         }
         body {
