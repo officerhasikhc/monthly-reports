@@ -114,6 +114,12 @@
 </head>
 <body>
 
+<script src="js/data-cache.js"></script>
+<script src="js/reliable-post.js"></script>
+<script src="js/sync-manager.js"></script>
+<script src="js/data-manager.js"></script>
+<script src="js/session-manager.js"></script>
+<script src="js/field-config.js"></script>
 <script src="js/toolbar-pro.js"></script>
 <!-- Toolbar is built by toolbar-pro.js -->
 
@@ -152,22 +158,29 @@ const STORE_PFX  = 'moh_salary_';
 const EMP_KEY    = 'moh_employees';
 const WP_KEY     = 'moh_workplace';
 
-const DEF_EMPS = [
-    { name:'د. مصطفى حسني',       staffNumber:'82021',     numType:'وظيفي', job:'طبيب عام',      workNotes:'', hrNotes:'' },
-    { name:'ANU MAMOOTIL',         staffNumber:'88973',     numType:'وظيفي', job:'STAFF NURSE',   workNotes:'', hrNotes:'' },
-    { name:'MITTY MATHEW',         staffNumber:'79470',     numType:'وظيفي', job:'STAFF NURSE',   workNotes:'', hrNotes:'' },
-    { name:'SAMINI THANKAMONY',    staffNumber:'85181',     numType:'وظيفي', job:'STAFF NURSE',   workNotes:'', hrNotes:'' },
-    { name:'حسان بن ثابت هادي رجب', staffNumber:'222975657', numType:'مدني',  job:'سائق اسعاف',    workNotes:'عقد أجر يومي', hrNotes:'' },
-];
-
-const DEF_WP = 'مركز حاسك الصحي';
-const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+function getDEF_EMPS(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('salary.defaultEmployees') : null) || [
+    { name:'د. مصطفى حسني', staffNumber:'82021', numType:'وظيفي', job:'طبيب عام', workNotes:'', hrNotes:'' },
+    { name:'ANU MAMOOTIL', staffNumber:'88973', numType:'وظيفي', job:'STAFF NURSE', workNotes:'', hrNotes:'' },
+    { name:'MITTY MATHEW', staffNumber:'79470', numType:'وظيفي', job:'STAFF NURSE', workNotes:'', hrNotes:'' },
+    { name:'SAMINI THANKAMONY', staffNumber:'85181', numType:'وظيفي', job:'STAFF NURSE', workNotes:'', hrNotes:'' },
+    { name:'حسان بن ثابت هادي رجب', staffNumber:'222975657', numType:'مدني', job:'سائق اسعاف', workNotes:'عقد أجر يومي', hrNotes:'' }
+]; }
+function getDEF_WP(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('salary.defaultWorkplace') : null) || 'مركز حاسك الصحي'; }
+function getAR_M(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.monthNames') : null) || ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']; }
+function getNumTypeOpts(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('salary.numTypeOptions') : null) || ['وظيفي','مدني']; }
 
 let cMonth, cYear, emps=[], wp;
 
 /* ---------- init ---------- */
 function init(){
+    if(typeof SessionManager !== 'undefined' && !SessionManager.isValid()){
+        sessionStorage.setItem('moh_redirect_after_login', window.location.href);
+        location.href = 'index.html'; return;
+    }
     loadEmps(); loadWp();
+
+    if(typeof DataManager !== 'undefined' && DataManager.registerSave) DataManager.registerSave('salary', ()=> saveData(true));
+    if(typeof DataManager !== 'undefined' && DataManager.onSync) DataManager.onSync('salary', ()=>{ loadData(); refresh(); });
 
     ToolbarPro.build({
         title: 'كشف الرواتب الشهرية',
@@ -182,23 +195,26 @@ function init(){
 }
 
 function loadEmps(){
-    try { emps = JSON.parse(localStorage.getItem(EMP_KEY)) || [...DEF_EMPS]; }
-    catch(e){ emps = [...DEF_EMPS]; }
-    if(!emps.length) emps = [...DEF_EMPS];
+    const raw = typeof DataManager !== 'undefined' ? DataManager.get(EMP_KEY) : (()=>{ try{ return JSON.parse(localStorage.getItem(EMP_KEY)); }catch(e){ return null; }})();
+    emps = (raw && Array.isArray(raw)) ? raw : [...getDEF_EMPS()];
+    if(!emps.length) emps = [...getDEF_EMPS()];
 }
-function saveEmpsLS(){ localStorage.setItem(EMP_KEY, JSON.stringify(emps)); }
-function loadWp(){ wp = localStorage.getItem(WP_KEY) || DEF_WP; }
-function saveWpLS(){ localStorage.setItem(WP_KEY, wp); }
+function saveEmpsLS(){ (typeof DataManager !== 'undefined' ? DataManager : {set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))}).set(EMP_KEY, emps); }
+function loadWp(){ wp = (typeof DataManager !== 'undefined' ? DataManager.get(WP_KEY) : localStorage.getItem(WP_KEY)) || getDEF_WP(); }
+function saveWpLS(){ (typeof DataManager !== 'undefined' ? DataManager : {set:(k,v)=>localStorage.setItem(k,v)}).set(WP_KEY, wp); }
 
 /* ---------- month / year ---------- */
 function setupSelectors(){
     const now = new Date(); cMonth = now.getMonth()+1; cYear = now.getFullYear();
     const sM = document.getElementById('selMonth');
     const sY = document.getElementById('selYear');
+    const AR_M = getAR_M();
     AR_M.forEach((m,i)=>{
         const o = new Option(m, i+1, false, i+1===cMonth); sM.add(o);
     });
-    for(let y=2024;y<=2032;y++){ sY.add(new Option(y,y,false,y===cYear)); }
+    const yearMin = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMin') : null) || 2024;
+    const yearMax = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMax') : null) || 2032;
+    for(let y=yearMin;y<=yearMax;y++){ sY.add(new Option(y,y,false,y===cYear)); }
     sM.onchange = ()=>{ cMonth=+sM.value; refresh(); };
     sY.onchange = ()=>{ cYear=+sY.value; refresh(); };
 }
@@ -218,6 +234,7 @@ function buildFields(){
     // =============================================
 
     // --- Month name (dots area after "لشهر") ---
+    const AR_M = getAR_M();
     mkFld(ov,{id:'h_month', t:15.3, r:37.3, w:15, h:2.0, fs:23, fw:'bold', clr:'#c00',
         val:()=> AR_M[cMonth-1]});
 
@@ -368,7 +385,7 @@ function refresh(){
     // also update editable h_wp
     const wpEl = document.getElementById('h_wp');
     if(wpEl) wpEl.textContent = wp;
-    sts('تم التحديث - '+AR_M[cMonth-1]+' '+cYear);
+    sts('تم التحديث - '+getAR_M()[cMonth-1]+' '+cYear);
 }
 
 /* ---------- save / load ---------- */
@@ -376,10 +393,10 @@ function skey(){ return STORE_PFX+cYear+'_'+cMonth; }
 
 function saveData(silent){
     const d = { month:cMonth, year:cYear, workplace:wp, employees:emps, at:new Date().toISOString() };
-    localStorage.setItem(skey(), JSON.stringify(d));
+    (typeof DataManager !== 'undefined' ? DataManager.set.bind(DataManager) : (k,v)=>localStorage.setItem(k,JSON.stringify(v)))(skey(), d);
     saveEmpsLS(); saveWpLS();
     ToolbarPro.updateLastSave();
-    sts('تم الحفظ - '+AR_M[cMonth-1]+' '+cYear);
+    sts('تم الحفظ - '+getAR_M()[cMonth-1]+' '+cYear);
     if(!silent){
         ToolbarPro.toast('تم حفظ البيانات', 'ok', 1500);
         setTimeout(()=>{ location.href = 'index.html'; }, 1200);
@@ -387,13 +404,10 @@ function saveData(silent){
 }
 
 function loadData(){
-    const s = localStorage.getItem(skey());
-    if(s){
-        try{
-            const d=JSON.parse(s);
-            if(d.workplace){wp=d.workplace; saveWpLS();}
-            if(d.employees){emps=d.employees; saveEmpsLS();}
-        }catch(e){}
+    const d = typeof DataManager !== 'undefined' ? DataManager.get(skey()) : (()=>{ try{ return JSON.parse(localStorage.getItem(skey())); }catch(e){ return null; }})();
+    if(d){
+        if(d.workplace){wp=d.workplace; saveWpLS();}
+        if(d.employees){emps=d.employees; saveEmpsLS();}
     }
     refresh();
 }
@@ -407,23 +421,23 @@ function openEmpModal(){
 function closeEmpModal(){ document.getElementById('empModal').style.display='none'; }
 
 function addEmpTR(tb,emp,idx){
+    const opts = getNumTypeOpts();
+    const optHtml = opts.map(o=>`<option value="${o}" ${emp.numType===o?'selected':''}>${o}</option>`).join('');
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td style="text-align:center">${idx+1}</td>
-        <td><input value="${emp.name}" data-f="name" data-i="${idx}"></td>
-        <td><input value="${emp.staffNumber}" data-f="staffNumber" data-i="${idx}"></td>
-        <td><select data-f="numType" data-i="${idx}">
-            <option value="وظيفي" ${emp.numType==='وظيفي'?'selected':''}>وظيفي</option>
-            <option value="مدني" ${emp.numType==='مدني'?'selected':''}>مدني</option>
-        </select></td>
-        <td><input value="${emp.job}" data-f="job" data-i="${idx}"></td>
-        <td><input value="${emp.workNotes||''}" data-f="workNotes" data-i="${idx}"></td>
+        <td><input value="${(emp.name||'').replace(/"/g,'&quot;')}" data-f="name" data-i="${idx}"></td>
+        <td><input value="${(emp.staffNumber||'').replace(/"/g,'&quot;')}" data-f="staffNumber" data-i="${idx}"></td>
+        <td><select data-f="numType" data-i="${idx}">${optHtml}</select></td>
+        <td><input value="${(emp.job||'').replace(/"/g,'&quot;')}" data-f="job" data-i="${idx}"></td>
+        <td><input value="${(emp.workNotes||'').replace(/"/g,'&quot;')}" data-f="workNotes" data-i="${idx}"></td>
         <td><button class="btn" style="background:#dc3545" onclick="delEmp(${idx})">حذف</button></td>`;
     tb.appendChild(tr);
 }
 
 function addEmpRow(){
-    emps.push({name:'',staffNumber:'',numType:'وظيفي',job:'',workNotes:'',hrNotes:''});
+    const defNumType = (getNumTypeOpts()[0]) || 'وظيفي';
+    emps.push({name:'',staffNumber:'',numType:defNumType,job:'',workNotes:'',hrNotes:''});
     const tb=document.getElementById('empTbody');
     addEmpTR(tb, emps[emps.length-1], emps.length-1);
 }

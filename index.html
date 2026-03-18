@@ -203,6 +203,12 @@
     </div>
 </div>
 
+<script src="js/data-cache.js"></script>
+<script src="js/reliable-post.js"></script>
+<script src="js/sync-manager.js"></script>
+<script src="js/data-manager.js"></script>
+<script src="js/session-manager.js"></script>
+<script src="js/field-config.js"></script>
 <script>
 // ================================================================
 //  INDEX / LOGIN / DASHBOARD
@@ -210,7 +216,7 @@
 
 const ADMIN_STAFF_ID = '65886';
 const SESSION_KEY = 'moh_session';
-const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+function getAR_M(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.monthNames') : null) || ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']; }
 
 const REPORTS = [
     {
@@ -241,6 +247,9 @@ function doLogin(){
     const id = document.getElementById('empIdInput').value.trim();
     if(id === ADMIN_STAFF_ID){
         sessionStorage.setItem(SESSION_KEY, JSON.stringify({staffId:id, at:Date.now()}));
+        if(typeof SessionManager !== 'undefined' && SessionManager.touch) SessionManager.touch();
+        const redirect = sessionStorage.getItem('moh_redirect_after_login');
+        if(redirect){ sessionStorage.removeItem('moh_redirect_after_login'); location.href = redirect; return; }
         showDashboard();
     } else {
         document.getElementById('loginErr').style.display='block';
@@ -254,6 +263,7 @@ function doLogout(){
 }
 
 function checkSession(){
+    if(typeof SessionManager !== 'undefined' && SessionManager.isValid) return SessionManager.isValid();
     const s = sessionStorage.getItem(SESSION_KEY);
     if(s){
         try{
@@ -303,7 +313,9 @@ function setupDashYear(){
     const sel = document.getElementById('dashYear');
     sel.innerHTML = '';
     const curYear = new Date().getFullYear();
-    for(let y=2024; y<=curYear+1; y++){
+    const yearMin = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMin') : null) || 2024;
+    const yearMax = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMax') : null) || 2032;
+    for(let y=yearMin; y<=yearMax; y++){
         sel.add(new Option(y, y, false, y===curYear));
     }
 }
@@ -313,24 +325,25 @@ function refreshSavedList(){
     const tbody = document.getElementById('savedTbody');
     tbody.innerHTML = '';
 
+    const getData = (key)=> typeof DataManager !== 'undefined' ? DataManager.get(key) : (()=>{ try{ return JSON.parse(localStorage.getItem(key)); }catch(e){ return null; }})();
     let found = false;
     REPORTS.forEach(r=>{
         for(let m=1; m<=12; m++){
             const key = r.storagePrefix + year + '_' + m;
-            const s = localStorage.getItem(key);
-            if(s){
+            const d = getData(key);
+            if(d){
                 found = true;
                 let savedAt = '--';
                 try {
-                    const d = JSON.parse(s);
                     if(d.at) savedAt = new Date(d.at).toLocaleDateString('ar-OM');
                     else if(d.savedAt) savedAt = new Date(d.savedAt).toLocaleDateString('ar-OM');
                 } catch(e){}
 
                 const tr = document.createElement('tr');
+                const AR_M = getAR_M();
                 tr.innerHTML = `
                     <td>${r.title}</td>
-                    <td>${AR_M[m-1]}</td>
+                    <td>${AR_M[m-1] || m}</td>
                     <td>${year}</td>
                     <td>${savedAt}</td>
                     <td>
