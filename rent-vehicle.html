@@ -88,6 +88,12 @@
 </head>
 <body>
 
+<script src="js/data-cache.js"></script>
+<script src="js/reliable-post.js"></script>
+<script src="js/sync-manager.js"></script>
+<script src="js/data-manager.js"></script>
+<script src="js/session-manager.js"></script>
+<script src="js/field-config.js"></script>
 <script src="js/toolbar-pro.js"></script>
 <!-- Toolbar is built by toolbar-pro.js -->
 
@@ -105,17 +111,7 @@
         <label>اليوم (رقم اليوم في الشهر):</label>
         <input type="number" id="tripDay" min="1" max="31" placeholder="مثال: 5">
         <label>الوجهة:</label>
-        <select id="tripDest">
-            <option value="داخل نطاق الولاية">داخل نطاق الولاية</option>
-            <option value="صلاله">صلاله</option>
-            <option value="مرباط">مرباط</option>
-            <option value="طاقة">طاقة</option>
-            <option value="ثمريت">ثمريت</option>
-            <option value="شليم">شليم</option>
-            <option value="رخيوت">رخيوت</option>
-            <option value="المزيونة">المزيونة</option>
-            <option value="مقشن">مقشن</option>
-        </select>
+        <select id="tripDest"><!-- Populated by JS from FieldConfig --></select>
         <label>أو أدخل وجهة أخرى:</label>
         <input type="text" id="tripDestCustom" placeholder="اكتب اسم المدينة">
         <div style="margin-top:14px; display:flex; gap:6px;">
@@ -133,43 +129,35 @@
 // ================================================================
 
 const STORE_PFX = 'moh_rentveh_';
-const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-const AR_DAYS = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
-
-// Defaults
-const DEF_OWNER = 'ورثة سالم بن شعبان العبيداني';
-const DEF_CAR_NUM = '8753';
-const DEF_WILAYA = 'سدح';
-const DEF_CENTER = 'مركز صحي / حاسك';
-const DEF_DAILY_WAGE = '';
-const DEF_WORK_NOTE = 'المذكور قام بمهام عمله على اكمل وجه وذلك حسب الاتفاقية, يرجى التكرم مشكورين بتوجيه المختصين بصرف مستحقاته الشهرية لهذا الشهر.';
+function getAR_M(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.monthNames') : null) || ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']; }
+function getAR_DAYS(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.dayNames') : null) || ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت']; }
+function getTripDestinations(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('rentVehicle.tripDestinations') : null) || ['داخل نطاق الولاية','صلاله','مرباط','طاقة','ثمريت','شليم','رخيوت','المزيونة','مقشن']; }
+function getDefaultTrip(){ const d = getTripDestinations(); return d && d[0] ? d[0] : 'داخل نطاق الولاية'; }
 
 let cMonth, cYear, tripData;
 
 function getDefaultTrips(month, year){
     const daysInMonth = new Date(year, month, 0).getDate();
     const trips = {};
+    const defDest = getDefaultTrip();
     for(let d=1; d<=daysInMonth; d++){
         const dt = new Date(year, month-1, d);
         const dow = dt.getDay(); // 0=Sun..6=Sat
-        // Friday=5, Saturday=6 are off
-        if(dow === 5 || dow === 6){
-            trips[d] = ''; // empty = off day
-        } else {
-            trips[d] = 'داخل نطاق الولاية';
-        }
+        if(dow === 5 || dow === 6) trips[d] = '';
+        else trips[d] = defDest;
     }
     return trips;
 }
 
 function getDefaultData(month, year){
+    const g = (p,d) => (typeof FieldConfig !== 'undefined' ? FieldConfig.get(p) : null) || d;
     return {
-        owner: DEF_OWNER,
-        carNumber: DEF_CAR_NUM,
-        wilaya: DEF_WILAYA,
-        center: DEF_CENTER,
-        dailyWage: DEF_DAILY_WAGE,
-        workNote: DEF_WORK_NOTE,
+        owner: g('rentVehicle.defaultOwner', 'ورثة سالم بن شعبان العبيداني'),
+        carNumber: g('rentVehicle.defaultCarNum', '8753'),
+        wilaya: g('rentVehicle.defaultWilaya', 'سدح'),
+        center: g('rentVehicle.defaultCenter', 'مركز صحي / حاسك'),
+        dailyWage: g('rentVehicle.defaultDailyWage', ''),
+        workNote: g('rentVehicle.defaultWorkNote', 'المذكور قام بمهام عمله على اكمل وجه وذلك حسب الاتفاقية, يرجى التكرم مشكورين بتوجيه المختصين بصرف مستحقاته الشهرية لهذا الشهر.'),
         month: month,
         year: year,
         trips: getDefaultTrips(month, year)
@@ -178,6 +166,14 @@ function getDefaultData(month, year){
 
 /* ---------- init ---------- */
 function init(){
+    if(typeof SessionManager !== 'undefined' && !SessionManager.isValid()){
+        sessionStorage.setItem('moh_redirect_after_login', window.location.href);
+        location.href = 'index.html'; return;
+    }
+
+    if(typeof DataManager !== 'undefined' && DataManager.registerSave) DataManager.registerSave('rentveh', ()=> saveData(true));
+    if(typeof DataManager !== 'undefined' && DataManager.onSync) DataManager.onSync('rentveh', ()=>{ loadData(); buildFields(); });
+
     ToolbarPro.build({
         title: 'حركة السيارة المستأجرة',
         extraButtons: [
@@ -196,8 +192,11 @@ function setupSelectors(){
     cYear = now.getFullYear();
     const sM = document.getElementById('selMonth');
     const sY = document.getElementById('selYear');
+    const AR_M = getAR_M();
     AR_M.forEach((m,i)=>{ sM.add(new Option(m,i+1,false,i+1===cMonth)); });
-    for(let y=2024;y<=2032;y++){ sY.add(new Option(y,y,false,y===cYear)); }
+    const yearMin = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMin') : null) || 2024;
+    const yearMax = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMax') : null) || 2032;
+    for(let y=yearMin;y<=yearMax;y++){ sY.add(new Option(y,y,false,y===cYear)); }
     sM.onchange = ()=>{ cMonth=+sM.value; loadData(); buildFields(); };
     sY.onchange = ()=>{ cYear=+sY.value; loadData(); buildFields(); };
 }
@@ -207,9 +206,9 @@ function skey(){ return STORE_PFX+cYear+'_'+cMonth; }
 
 function saveData(silent){
     readFieldsToData();
-    localStorage.setItem(skey(), JSON.stringify(tripData));
+    (typeof DataManager !== 'undefined' ? DataManager.set.bind(DataManager) : (k,v)=>localStorage.setItem(k,JSON.stringify(v)))(skey(), tripData);
     ToolbarPro.updateLastSave();
-    sts('تم الحفظ - '+AR_M[cMonth-1]+' '+cYear);
+    sts('تم الحفظ - '+getAR_M()[cMonth-1]+' '+cYear);
     if(!silent){
         ToolbarPro.toast('تم حفظ البيانات', 'ok', 1500);
         setTimeout(()=>{ location.href = 'index.html'; }, 1200);
@@ -217,12 +216,8 @@ function saveData(silent){
 }
 
 function loadData(){
-    const s = localStorage.getItem(skey());
-    if(s){
-        try { tripData = JSON.parse(s); } catch(e){ tripData = getDefaultData(cMonth, cYear); }
-    } else {
-        tripData = getDefaultData(cMonth, cYear);
-    }
+    const d = typeof DataManager !== 'undefined' ? DataManager.get(skey()) : (()=>{ try{ return JSON.parse(localStorage.getItem(skey())); }catch(e){ return null; }})();
+    tripData = d ? d : getDefaultData(cMonth, cYear);
 }
 
 function readFieldsToData(){
@@ -357,7 +352,7 @@ function buildFields(){
 
         const dt = new Date(cYear, cMonth-1, d);
         const dow = dt.getDay();
-        const dayName = AR_DAYS[dow];
+        const dayName = getAR_DAYS()[dow];
         const trip = td.trips[d] || '';
         const isOff = (dow === 5 || dow === 6);
 
@@ -394,7 +389,14 @@ function mkFld(parent, o){
 }
 
 /* ---------- Trip Modal ---------- */
-function openTripModal(){ document.getElementById('tripModal').style.display='block'; }
+function openTripModal(){
+    const sel = document.getElementById('tripDest');
+    if(sel && sel.options.length === 0){
+        const dests = getTripDestinations();
+        dests.forEach(d=> sel.add(new Option(d, d)));
+    }
+    document.getElementById('tripModal').style.display='block';
+}
 function closeTripModal(){ document.getElementById('tripModal').style.display='none'; }
 
 function addTrip(){
