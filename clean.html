@@ -74,6 +74,12 @@
 </head>
 <body>
 
+<script src="js/data-cache.js"></script>
+<script src="js/reliable-post.js"></script>
+<script src="js/sync-manager.js"></script>
+<script src="js/data-manager.js"></script>
+<script src="js/session-manager.js"></script>
+<script src="js/field-config.js"></script>
 <script src="js/toolbar-pro.js"></script>
 <!-- Toolbar is built by toolbar-pro.js -->
 
@@ -92,31 +98,12 @@
 const STORE_PFX = 'moh_clean_';
 
 // Image: 1788 x 2564 (portrait)
-const AR_M = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-
-// Hijri month names (approximate)
-const HIJRI_M = ['محرم','صفر','ربيع الأول','ربيع الثاني','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوال','ذو القعدة','ذو الحجة'];
-
-// 12 service items as per the form
-const SERVICE_LABELS = [
-    'أ. عدد العمال المعينين في (مستشفى / مركز)',
-    '2. الالتزام بالتغذية (للمستشفيات)',
-    '3. الالتزام بنسبة التعمين',
-    '4. العمال تحت كفالة الشركة و سريان بطاقة العامل',
-    '5. الالتزام بالنظافة العامة بالمؤسسة وحرمها',
-    '6. الالتزام باستئصال الآفات والحشرات بالمؤسسة وحرمها',
-    '7. مطابقة طبيعة عمل العامل مع مسمى المهنة',
-    '8. الالتزام بزي موحد',
-    '9. توفير الصابون السائل والمناشف واكياس النفايات',
-    '10. توفير جميع المواد المطهرة والكيماوية والمعطرة',
-    '11. الالتزام بتنفيذ التعليمات',
-    '12. أي أعمال أخرى يتطلب عملها'
-];
-
-// Default data
-const DEF_COMPANY = 'ناصر البرعمي';
-const DEF_CENTER = 'حاسك الصحي';
-const DEF_WORKERS = '2';
+function getAR_M(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.monthNames') : null) || ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']; }
+function getDEF_COMPANY(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('clean.defaultCompany') : null) || 'ناصر البرعمي'; }
+function getDEF_CENTER(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('clean.defaultCenter') : null) || 'حاسك الصحي'; }
+function getDEF_WORKERS(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('clean.defaultWorkers') : null) || '2'; }
+function getComplianceOpts(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('clean.complianceOptions') : null) || ['-','ملتزم','غير ملتزم']; }
+function getRefNumberFormat(){ return (typeof FieldConfig !== 'undefined' ? FieldConfig.get('clean.refNumberFormat') : null) || 'م ع خ ص/ ظ/ 41/ {month} /{year}'; }
 
 let cMonth, cYear, reportData;
 
@@ -182,15 +169,15 @@ function getDefaultData(){
         });
     }
     // First row (workers count) - 4 حقول أعداد بدل ملتزم/غير ملتزم
-    rows[0].com_om = DEF_WORKERS;
+    rows[0].com_om = getDEF_WORKERS();
     rows[0].com_non = '';
     rows[0].unc_om = '';
     rows[0].unc_non = '';
 
     return {
-        company: DEF_COMPANY,
-        center: DEF_CENTER,
-        reportMonthName: AR_M[repMonth-1],
+        company: getDEF_COMPANY(),
+        center: getDEF_CENTER(),
+        reportMonthName: getAR_M()[repMonth-1],
         reportMonth: repMonth,
         reportYear: repYear,
         refNumber: getRefNumber(repMonth, repYear),
@@ -201,8 +188,8 @@ function getDefaultData(){
 }
 
 function getRefNumber(month, year){
-    // م ع خ ص / ظ / 41 / <month> / <year>
-    return 'م ع خ ص/ ظ/ 41/ ' + month + ' /' + year;
+    const fmt = getRefNumberFormat();
+    return fmt.replace('{month}', month).replace('{year}', year);
 }
 
 function getDaysInMonth(month, year){
@@ -211,6 +198,14 @@ function getDaysInMonth(month, year){
 
 /* ---------- init ---------- */
 function init(){
+    if(typeof SessionManager !== 'undefined' && !SessionManager.isValid()){
+        sessionStorage.setItem('moh_redirect_after_login', window.location.href);
+        location.href = 'index.html'; return;
+    }
+
+    if(typeof DataManager !== 'undefined' && DataManager.registerSave) DataManager.registerSave('clean', ()=> saveData(true));
+    if(typeof DataManager !== 'undefined' && DataManager.onSync) DataManager.onSync('clean', ()=>{ loadData(); buildFields(); });
+
     ToolbarPro.build({
         title: 'تقرير خدمات النظافة',
         onSave: function(silent){ saveData(silent); }
@@ -228,10 +223,13 @@ function setupSelectors(){
 
     const sM = document.getElementById('selMonth');
     const sY = document.getElementById('selYear');
+    const AR_M = getAR_M();
     AR_M.forEach((m,i)=>{
         sM.add(new Option(m, i+1, false, i+1===cMonth));
     });
-    for(let y=2024;y<=2032;y++){ sY.add(new Option(y,y,false,y===cYear)); }
+    const yearMin = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMin') : null) || 2024;
+    const yearMax = (typeof FieldConfig !== 'undefined' ? FieldConfig.get('global.yearMax') : null) || 2032;
+    for(let y=yearMin;y<=yearMax;y++){ sY.add(new Option(y,y,false,y===cYear)); }
     sM.onchange = ()=>{ cMonth=+sM.value; loadData(); buildFields(); };
     sY.onchange = ()=>{ cYear=+sY.value; loadData(); buildFields(); };
 }
@@ -242,7 +240,7 @@ function skey(){ return STORE_PFX+cYear+'_'+cMonth; }
 function saveData(silent){
     // Read current values from fields
     readFieldsToData();
-    localStorage.setItem(skey(), JSON.stringify(reportData));
+    (typeof DataManager !== 'undefined' ? DataManager.set.bind(DataManager) : (k,v)=>localStorage.setItem(k,JSON.stringify(v)))(skey(), reportData);
     ToolbarPro.updateLastSave();
     sts('تم الحفظ - '+AR_M[cMonth-1]+' '+cYear);
     if(!silent){
@@ -252,15 +250,15 @@ function saveData(silent){
 }
 
 function loadData(){
-    const s = localStorage.getItem(skey());
-    if(s){
-        try { reportData = JSON.parse(s); } catch(e){ reportData = getDefaultData(); }
+    const d = typeof DataManager !== 'undefined' ? DataManager.get(skey()) : (()=>{ try{ return JSON.parse(localStorage.getItem(skey())); }catch(e){ return null; }})();
+    if(d){
+        reportData = d;
     } else {
         reportData = getDefaultData();
         // Adjust dates for selected month
         reportData.reportMonth = cMonth;
         reportData.reportYear = cYear;
-        reportData.reportMonthName = AR_M[cMonth-1];
+        reportData.reportMonthName = getAR_M()[cMonth-1];
         const firstDay = new Date(cYear, cMonth-1, 1);
         const lastDay = new Date(cYear, cMonth, 0);
         const fmtD = (d) => d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0');
@@ -468,7 +466,7 @@ function buildFields(){
             mkFld(ov,{id:'f_r'+i+'_unc_non', t:row.t+pad, r:row.unc_non.r, w:row.unc_non.w, h:row.h-pad*2,
                 fs:row.unc_non.fs, fw:'bold', edit:true, val: rd_row.unc_non||''});
         } else {
-            const opts = ['-','ملتزم','غير ملتزم'];
+            const opts = getComplianceOpts();
 
             // ملتزم عماني
             const comOm = mkSelect(ov,{id:'f_r'+i+'_com_om', t:row.t+pad, r:row.com_om.r, w:row.com_om.w, h:row.h-pad*2,
